@@ -27,18 +27,18 @@ export const DriverSelection: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { createBooking, /* use real nearby drivers */ availableDrivers, searchDrivers, refreshApprovedDriversNear } = useBookingStore();
+  const { createBooking, /* use real nearby drivers */ availableDrivers, searchDrivers, refreshApprovedDriversNear, startRealTimeUpdates, cancelLastRequest, currentBooking } = useBookingStore();
   
   const [offers, setOffers] = useState<DriverOffer[]>([]);
   const [selectedOffer, setSelectedOffer] = useState<string | null>(null);
   const [negotiationOffer, setNegotiationOffer] = useState<string | null>(null);
   const [counterPrice, setCounterPrice] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(30); // 30 seconds to accept
 
   const bookingData = location.state;
 
   useEffect(() => {
+    startRealTimeUpdates();
     if (!bookingData) {
       navigate('/');
       return;
@@ -57,23 +57,14 @@ export const DriverSelection: React.FC = () => {
       generateDriverOffers();
     })();
 
-    // Countdown timer
-    const timer = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          // Auto-reject pending offers
-          setOffers(prev => prev.map(offer => 
-            offer.status === 'pending' ? { ...offer, status: 'rejected' } : offer
-          ));
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
+    return () => {}
   }, [bookingData, navigate]);
+
+  useEffect(() => {
+    if (currentBooking && currentBooking.status === 'accepted') {
+      navigate('/tracking/active');
+    }
+  }, [currentBooking])
 
   useEffect(() => {
     // Regenerate offers whenever nearby drivers list changes
@@ -138,10 +129,7 @@ export const DriverSelection: React.FC = () => {
       
       toast.success(`Rezervasyon kabul edildi! Sürücü: ${offer.driverName}`);
       
-      // Navigate to tracking page
-      setTimeout(() => {
-        navigate('/tracking/active');
-      }, 2000);
+      // Navigate to tracking page handled by useEffect
     } catch (error) {
       toast.error('Rezervasyon oluşturulamadı');
     } finally {
@@ -200,19 +188,22 @@ export const DriverSelection: React.FC = () => {
           <p className="text-gray-600">
             Size en yakın sürücülerden gelen teklifleri değerlendirin
           </p>
-          <div className="mt-4 bg-blue-50 rounded-lg p-4">
-            <div className="flex items-center justify-between text-sm">
-              <span><strong>Rota:</strong> {bookingData.pickupAddress} → {bookingData.destinationAddress}</span>
-              <span className="text-blue-600 font-medium">
-                ⏰ {timeRemaining} saniye kaldı
-              </span>
-            </div>
-          </div>
+           <div className="mt-4 bg-blue-50 rounded-lg p-4">
+             <div className="flex items-center justify-between text-sm">
+               <span><strong>Rota:</strong> {bookingData.pickupAddress} → {bookingData.destinationAddress}</span>
+               <span className="text-blue-600 font-medium">Esnek çağrı yönetimi aktif</span>
+             </div>
+             <div className="mt-3 text-right">
+               <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={async()=>{ try { await cancelLastRequest(user?.id) } catch {}; navigate('/') }}>
+                 İptal Et
+               </Button>
+             </div>
+           </div>
         </div>
 
         <div className="space-y-4">
-          {offers.length === 0 && timeRemaining > 0 && (
-            <div className="bg-white rounded-lg shadow-md p-6 text-center text-sm text-gray-600">
+          {offers.length === 0 && (
+            <div className="bg-white rounded-lg shadow_md p-6 text-center text-sm text-gray-600">
               Sürücüler getiriliyor...
             </div>
           )}
@@ -292,7 +283,7 @@ export const DriverSelection: React.FC = () => {
                 </div>
               ) : null}
 
-              {offer.status === 'pending' && timeRemaining > 0 && (
+              {offer.status === 'pending' && (
                 <div className="flex space-x-2">
                   <Button
                     className="flex-1"
@@ -319,29 +310,11 @@ export const DriverSelection: React.FC = () => {
                 </div>
               )}
 
-              {offer.status === 'rejected' && (
-                <div className="flex items-center justify-center text-red-600 font-medium">
-                  <X className="h-5 w-5 mr-1" />
-                  Süre Doldu
-                </div>
-              )}
+              
             </div>
           ))}
         </div>
-
-        {(timeRemaining === 0 && (offers.length === 0 || offers.every(offer => offer.status === 'rejected'))) && (
-          <div className="text-center mt-8">
-            <div className="bg-gray-100 rounded-lg p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Teklif Süresi Doldu</h3>
-              <p className="text-gray-600 mb-4">
-                Tüm teklifler reddedildi veya süresi doldu. Yeni bir talep oluşturabilirsiniz.
-              </p>
-              <Button onClick={() => navigate('/')}>
-                Yeni Talep Oluştur
-              </Button>
-            </div>
-          </div>
-        )}
+        
       </div>
     </div>
   );

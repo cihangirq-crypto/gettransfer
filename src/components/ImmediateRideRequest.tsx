@@ -61,7 +61,10 @@ export const ImmediateRideRequest: React.FC = () => {
         },
         (error) => {
           setIsLocating(false);
-          toast.error('Konumunuz alınamadı. Lütfen manuel adres girin.');
+          // Fallback to default location (Ankara) if GPS fails
+          const defaultLoc = { lat: 39.9334, lng: 32.8597 };
+          setCurrentLocation(defaultLoc);
+          toast.error('Otomatik konum alınamadı. Lütfen harita üzerinden konumunuzu seçin.');
           console.error('Geolocation error:', error);
         },
         {
@@ -72,7 +75,10 @@ export const ImmediateRideRequest: React.FC = () => {
       );
     } else {
       setIsLocating(false);
-      toast.error('Tarayıcınız konum özelliğini desteklemiyor.');
+      // Fallback for browsers without geolocation support
+      const defaultLoc = { lat: 39.9334, lng: 32.8597 };
+      setCurrentLocation(defaultLoc);
+      toast.error('Tarayıcınız konum özelliğini desteklemiyor. Lütfen haritadan seçin.');
     }
   };
 

@@ -6,28 +6,37 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Home from "@/pages/Home";
 import { Login } from "@/pages/auth/Login";
 import { Register } from "@/pages/auth/Register";
-import { SearchResults } from "@/pages/SearchResults";
-import { BookingPage } from "@/pages/BookingPage";
-import { TrackingPage } from "@/pages/TrackingPage";
+const SearchResultsLazy = React.lazy(() => import('@/pages/SearchResults').then(m => ({ default: m.SearchResults })));
+const BookingPageLazy = React.lazy(() => import('@/pages/BookingPage').then(m => ({ default: m.BookingPage })));
+const TrackingPageLazy = React.lazy(() => import('@/pages/TrackingPage').then(m => ({ default: m.TrackingPage })));
 const DriverSelectionLazy = React.lazy(() => import('@/pages/DriverSelection').then(m => ({ default: m.DriverSelection })));
-import { CustomerDashboard } from "@/pages/customer/Dashboard";
-import { DriverDashboard } from "@/pages/driver/Dashboard";
-import { DriverDocuments } from "@/pages/driver/Documents";
-import { DriverLogin } from "@/pages/driver/Login";
-import { AdminDrivers } from "@/pages/admin/Drivers";
-import { Profile } from "@/pages/Profile";
+const CustomerDashboardLazy = React.lazy(() => import('@/pages/customer/Dashboard').then(m => ({ default: m.CustomerDashboard })));
+const DriverDashboardLazy = React.lazy(() => import('@/pages/driver/Dashboard').then(m => ({ default: m.DriverDashboard })));
+const DriverDocumentsLazy = React.lazy(() => import('@/pages/driver/Documents').then(m => ({ default: m.DriverDocuments })));
+const DriverLoginLazy = React.lazy(() => import('@/pages/driver/Login').then(m => ({ default: m.DriverLogin })));
+const DriverApplyLazy = React.lazy(() => import('@/pages/driver/Apply').then(m => ({ default: m.DriverApply })));
+const AdminDriversLazy = React.lazy(() => import('@/pages/admin/Drivers').then(m => ({ default: m.AdminDrivers })));
+const ProfileLazy = React.lazy(() => import('@/pages/Profile').then(m => ({ default: m.Profile })));
+import { I18nProvider } from '@/i18n'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 // Demo takip sayfası kaldırıldı
 
 export default function App() {
   return (
     <Router>
+      <I18nProvider>
+      <ErrorBoundary>
       <Layout>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/register/driver" element={<Register isDriver={true} />} />
-          <Route path="/search" element={<SearchResults />} />
+          <Route path="/search" element={
+            <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
+              <SearchResultsLazy />
+            </Suspense>
+          } />
           <Route path="/select-driver" element={
             <ProtectedRoute allowedRoles={['customer']}>
               <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
@@ -40,39 +49,68 @@ export default function App() {
           {/* Protected Routes */}
           <Route path="/booking/:id" element={
             <ProtectedRoute>
-              <BookingPage />
+              <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
+                <BookingPageLazy />
+              </Suspense>
             </ProtectedRoute>
           } />
           <Route path="/tracking/:bookingId" element={
             <ProtectedRoute>
-              <TrackingPage />
+              <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
+                <TrackingPageLazy />
+              </Suspense>
             </ProtectedRoute>
           } />
           <Route path="/customer/dashboard" element={
             <ProtectedRoute allowedRoles={['customer']}>
-              <CustomerDashboard />
+              <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
+                <CustomerDashboardLazy />
+              </Suspense>
             </ProtectedRoute>
           } />
           <Route path="/driver/dashboard" element={
             <ProtectedRoute allowedRoles={['driver']}>
-              <DriverDashboard />
+              <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
+                <DriverDashboardLazy />
+              </Suspense>
             </ProtectedRoute>
           } />
-          <Route path="/driver/login" element={<DriverLogin />} />
-          <Route path="/admin/drivers" element={<AdminDrivers />} />
+          <Route path="/driver/login" element={
+            <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
+              <DriverLoginLazy />
+            </Suspense>
+          } />
+          <Route path="/admin/drivers" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
+                <AdminDriversLazy />
+              </Suspense>
+            </ProtectedRoute>
+          } />
+          <Route path="/driver/apply" element={
+            <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
+              <DriverApplyLazy />
+            </Suspense>
+          } />
           <Route path="/driver/documents" element={
             <ProtectedRoute allowedRoles={['driver']}>
-              <DriverDocuments />
+              <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
+                <DriverDocumentsLazy />
+              </Suspense>
             </ProtectedRoute>
           } />
           <Route path="/profile" element={
             <ProtectedRoute>
-              <Profile />
+              <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
+                <ProfileLazy />
+              </Suspense>
             </ProtectedRoute>
           } />
         </Routes>
       </Layout>
+      </ErrorBoundary>
       <Toaster position="top-right" />
-    </Router>
+      </I18nProvider>
+      </Router>
   );
 }

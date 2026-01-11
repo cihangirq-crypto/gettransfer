@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import { Map } from '@/components/Map';
 import { Button } from '@/components/ui/Button';
 import { useBookingStore } from '@/stores/bookingStore';
@@ -23,8 +24,51 @@ export const TrackingPage: React.FC = () => {
   const [routePath, setRoutePath] = useState<Array<{lat:number,lng:number}>>([]);
   const [remainingPath, setRemainingPath] = useState<Array<{lat:number,lng:number}>>([]);
   const [driverInfo, setDriverInfo] = useState<any>(null);
+  const notifiedRef = useRef(false);
 
   const booking = currentBooking;
+
+  // Real-time Driver Tracking via Socket
+  useEffect(() => {
+    if (!booking?.driverId) return;
+
+    const origin = (import.meta.env.VITE_API_ORIGIN as string) || `http://${window.location.hostname}:3005`;
+    const socket = io(origin, { transports: ['websocket'], reconnection: true });
+
+    socket.on('connect', () => {
+      // Optional: Join a room if backend supports it
+    });
+
+    socket.on('driver:update', (data: any) => {
+      if (data.id === booking.driverId && data.location) {
+        setDriverLocation(data.location);
+        
+        // Update ETA and Check Proximity
+        if (booking.pickupLocation) {
+           const R = 6371; // Radius of the earth in km
+           const dLat = (booking.pickupLocation.lat - data.location.lat) * (Math.PI/180);
+           const dLng = (booking.pickupLocation.lng - data.location.lng) * (Math.PI/180);
+           const a = 
+             Math.sin(dLat/2) * Math.sin(dLat/2) +
+             Math.cos(data.location.lat * (Math.PI/180)) * Math.cos(booking.pickupLocation.lat * (Math.PI/180)) * 
+             Math.sin(dLng/2) * Math.sin(dLng/2);
+           const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+           const d = R * c; // Distance in km
+           
+           const newEta = Math.max(1, Math.round((d / 40) * 60)); // Assumes 40km/h avg speed
+           setEstimatedArrival(newEta);
+
+           // Proximity Alert (< 500m)
+           if (d < 0.5 && status === 'driver_en_route' && !notifiedRef.current) {
+             toast.info('Sürücünüz yaklaşıyor! (500m)', { duration: 5000 });
+             notifiedRef.current = true;
+           }
+        }
+      }
+    });
+
+    return () => { socket.disconnect(); };
+  }, [booking?.driverId, booking?.pickupLocation, status]);
 
   useEffect(() => {
     if (!booking && bookingId) {
@@ -33,63 +77,91 @@ export const TrackingPage: React.FC = () => {
   }, [bookingId]);
 
   useEffect(() => {
-    if (!booking) {
+    // Status Update Notification
+  useEffect(() => {
+    if (!status) return;
+    if (status === 'driver_en_route') toast.success('Sürücünüz yola çıktı!');
+    if (status === 'driver_arrived') toast.success('Sürücünüz konumunuza vardı!');
+    if (status === 'in_progress') toast.info('Yolculuk başladı.');
+    if (status === 'completed') toast.success('Yolculuk tamamlandı.');
+  }, [status]);
+
+  if (!booking) {
       toast.error('Aktif rezervasyon bulunamadı');
       navigate('/');
       return;
     }
     setStatus(booking.status);
     
-    const iv = setInterval(async () => {
-      try {
-        await refreshBookingById(booking.id);
-        setStatus(booking.status);
-        
-        if (booking.driverId) {
-          const res = await fetch(`/api/drivers/${booking.driverId}`);
-          const j = await res.json();
-          if (res.ok && j.success && j.data) {
-            setDriverInfo(j.data);
-            
-            if (j.data.location) {
-              setDriverLocation(j.data.location);
-              
-              if (booking.pickupLocation) {
-                const d = Math.hypot(j.data.location.lat - booking.pickupLocation.lat, j.data.location.lng - booking.pickupLocation.lng);
-                const eta = Math.max(1, Math.round(d * 60));
-                setEstimatedArrival(eta);
-                
-                if (routePath.length === 0) {
-                  try {
-                    const url = `https://router.project-osrm.org/route/v1/driving/${j.data.location.lng},${j.data.location.lat};${booking.pickupLocation.lng},${booking.pickupLocation.lat}?overview=full&geometries=geojson`;
-                    const rr = await fetch(url);
-                    const rj = await rr.json();
-                    const coords = Array.isArray(rj.routes) && rj.routes[0]?.geometry?.coordinates ? rj.routes[0].geometry.coordinates : [];
-                    const mapped = coords.map((c:any)=>({ lat: c[1], lng: c[0] }));
-                    const path = mapped.length>1 ? mapped : [j.data.location, booking.pickupLocation];
-                    setRoutePath(path);
-                    setRemainingPath(path);
-                  } catch {
-                    const path = [j.data.location, booking.pickupLocation];
-                    setRoutePath(path);
-                    setRemainingPath(path);
-                  }
-                } else {
-                  const idx = routePath.reduce((best:number, p, i)=>{
-                    const bd = Math.hypot(routePath[best].lat - j.data.location.lat, routePath[best].lng - j.data.location.lng);
-                    const cd = Math.hypot(p.lat - j.data.location.lat, p.lng - j.data.location.lng);
-                    return cd < bd ? i : best;
-                  }, 0);
-                  setRemainingPath(routePath.slice(idx));
+    // Initial Driver Info Fetch
+    const fetchDriver = async () => {
+        if (booking.driverId && !driverInfo) {
+            try {
+                const res = await fetch(`/api/drivers/${booking.driverId}`);
+                const j = await res.json();
+                if (res.ok && j.success && j.data) {
+                    setDriverInfo(j.data);
+                    if (j.data.location && !driverLocation) {
+                        setDriverLocation(j.data.location);
+                    }
                 }
-              }
-            }
-          }
+            } catch {}
         }
-      } catch {}
-    }, 5000);
-    return () => clearInterval(iv);
+    };
+    fetchDriver();
+
   }, [booking, navigate]);
+
+  // Robust Route Fetching
+  useEffect(() => {
+    if (!driverLocation || !booking?.pickupLocation || routePath.length > 0) return;
+
+    const fetchRoute = async (retries = 3) => {
+        try {
+            const url = `https://router.project-osrm.org/route/v1/driving/${driverLocation.lng},${driverLocation.lat};${booking.pickupLocation.lng},${booking.pickupLocation.lat}?overview=full&geometries=geojson`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Network response was not ok');
+            
+            const rj = await res.json();
+            if (rj.code !== 'Ok') throw new Error('OSRM Error');
+
+            const coords = Array.isArray(rj.routes) && rj.routes[0]?.geometry?.coordinates ? rj.routes[0].geometry.coordinates : [];
+            const mapped = coords.map((c:any)=>({ lat: c[1], lng: c[0] }));
+            const path = mapped.length > 1 ? mapped : [driverLocation, booking.pickupLocation];
+            
+            setRoutePath(path);
+            setRemainingPath(path);
+            
+            const durSec = rj.routes?.[0]?.duration;
+            if (typeof durSec === 'number' && isFinite(durSec)) {
+                setEstimatedArrival(Math.max(1, Math.round(durSec / 60)));
+            }
+        } catch (err) {
+            if (retries > 0) {
+                setTimeout(() => fetchRoute(retries - 1), 2000);
+            } else {
+                // Fallback: Straight line
+                const path = [driverLocation, booking.pickupLocation];
+                setRoutePath(path);
+                setRemainingPath(path);
+            }
+        }
+    };
+    
+    fetchRoute();
+  }, [driverLocation, booking?.pickupLocation]);
+
+  // Update Remaining Path as Driver Moves
+  useEffect(() => {
+    if (driverLocation && routePath.length > 0) {
+        const idx = routePath.reduce((best:number, p, i)=>{
+            const bd = Math.hypot(routePath[best].lat - driverLocation.lat, routePath[best].lng - driverLocation.lng);
+            const cd = Math.hypot(p.lat - driverLocation.lat, p.lng - driverLocation.lng);
+            return cd < bd ? i : best;
+        }, 0);
+        setRemainingPath(routePath.slice(idx));
+    }
+  }, [driverLocation]);
 
   useEffect(() => {
     if (booking?.pickupLocation && !driverLocation) {

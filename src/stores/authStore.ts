@@ -11,7 +11,7 @@ interface AuthState {
   error: string | null;
   
   // Actions
-  login: (email: string, password: string, userType: 'customer' | 'driver') => Promise<void>;
+  login: (email: string, password: string, userType: 'customer' | 'driver' | 'admin') => Promise<void>;
   register: (userData: any, userType: 'customer' | 'driver') => Promise<void>;
   logout: () => void;
   setUser: (user: User) => void;
@@ -28,7 +28,7 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       error: null,
 
-      login: async (email: string, password: string, userType: 'customer' | 'driver') => {
+      login: async (email: string, password: string, userType: 'customer' | 'driver' | 'admin') => {
         set({ isLoading: true, error: null });
         
         try {
@@ -37,7 +37,7 @@ export const useAuthStore = create<AuthState>()(
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ email, password, userType }),
+          body: JSON.stringify({ email, password, userType }),
           });
 
           const data: AuthResponse = await response.json();

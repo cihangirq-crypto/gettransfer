@@ -2,6 +2,8 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/Button';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { useI18n } from '@/i18n';
 import { 
   Car, 
   MapPin, 
@@ -21,27 +23,34 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, logout } = useAuthStore();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+  const { t } = useI18n();
 
   const isActive = (path: string) => location.pathname === path;
 
   const navigation = [
-    { name: 'Ana Sayfa', href: '/', icon: Car },
-    { name: 'Ara', href: '/search', icon: MapPin },
+    { name: t('nav.home'), href: '/', icon: Car },
+    { name: t('nav.search'), href: '/search', icon: MapPin },
   ];
 
   const customerNavigation = [
-    { name: 'Rezervasyonlarım', href: '/customer/dashboard', icon: History },
-    { name: 'Profil', href: '/profile', icon: User },
+    { name: t('customer.reservations'), href: '/customer/dashboard', icon: History },
+    { name: t('profile'), href: '/profile', icon: User },
   ];
 
   const driverNavigation = [
-    { name: 'Sürücü Paneli', href: '/driver/dashboard', icon: Car },
-    { name: 'Dokümanlar', href: '/driver/documents', icon: Settings },
-    { name: 'Profil', href: '/profile', icon: User },
+    { name: t('driver.panel'), href: '/driver/dashboard', icon: Car },
+    { name: t('driver.documents'), href: '/driver/documents', icon: Settings },
+    { name: t('profile'), href: '/profile', icon: User },
+  ];
+
+  const adminNavigation = [
+    { name: 'Admin • Sürücüler', href: '/admin/drivers', icon: Settings },
+    { name: t('profile'), href: '/profile', icon: User },
   ];
 
   const getUserNavigation = () => {
     if (!user) return [];
+    if (user.role === 'admin') return adminNavigation;
     if (user.role === 'driver') return driverNavigation;
     return customerNavigation;
   };
@@ -55,7 +64,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             {/* Logo */}
             <Link to="/" className="flex items-center space-x-2">
               <Car className="h-8 w-8 text-blue-600" />
-              <span className="text-xl font-bold text-gray-900">GetTransfer</span>
+              <span className="text-xl font-bold text-gray-900">{t('brand')}</span>
               <span className="text-xs text-gray-500">Build: {typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : ''}</span>
             </Link>
 
@@ -82,6 +91,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
             {/* User Menu */}
             <div className="hidden md:flex items-center space-x-4">
+              <LanguageSwitcher />
               {user ? (
                 <div className="flex items-center space-x-4">
                   {getUserNavigation().map((item) => {
@@ -108,24 +118,24 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                     className="text-gray-600 hover:text-gray-900"
                   >
                     <LogOut className="h-4 w-4 mr-1" />
-                    Çıkış
+                    {t('auth.logout')}
                   </Button>
                 </div>
               ) : (
                 <div className="flex items-center space-x-2">
                   <Link to="/driver/login">
                     <Button variant="outline" size="sm">
-                      Sürücü Girişi
+                      {t('auth.driverLogin')}
                     </Button>
                   </Link>
                   <Link to="/login">
                     <Button variant="outline" size="sm">
-                      Giriş Yap
+                      {t('auth.login')}
                     </Button>
                   </Link>
                   <Link to="/register">
                     <Button size="sm">
-                      Kayıt Ol
+                      {t('auth.register')}
                     </Button>
                   </Link>
                 </div>
@@ -198,33 +208,33 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   className="w-full justify-start text-gray-600 hover:text-gray-900"
                 >
                   <LogOut className="h-5 w-5 mr-2" />
-                  Çıkış Yap
+                  {t('auth.logout')}
                 </Button>
               )}
             </div>
             
-            {!user && (
-              <div className="px-2 py-3 space-y-2 border-t">
-                <Link to="/driver/login" onClick={() => setIsMenuOpen(false)}>
-                  <Button variant="outline" className="w-full">
-                    Sürücü Girişi
-                  </Button>
-                </Link>
-                <Link to="/login" onClick={() => setIsMenuOpen(false)}>
-                  <Button variant="outline" className="w-full">
-                    Giriş Yap
-                  </Button>
-                </Link>
-                <Link to="/register" onClick={() => setIsMenuOpen(false)}>
-                  <Button className="w-full">
-                    Kayıt Ol
-                  </Button>
-                </Link>
-              </div>
-            )}
-          </div>
-        )}
-      </nav>
+              {!user && (
+                <div className="px-2 py-3 space-y-2 border-t">
+                  <Link to="/driver/login" onClick={() => setIsMenuOpen(false)}>
+                    <Button variant="outline" className="w-full">
+                      {t('auth.driverLogin')}
+                    </Button>
+                  </Link>
+                  <Link to="/login" onClick={() => setIsMenuOpen(false)}>
+                    <Button variant="outline" className="w-full">
+                      {t('auth.login')}
+                    </Button>
+                  </Link>
+                  <Link to="/register" onClick={() => setIsMenuOpen(false)}>
+                    <Button className="w-full">
+                      {t('auth.register')}
+                    </Button>
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
+        </nav>
 
       {/* Main Content */}
       <main className="flex-1">
@@ -238,39 +248,39 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             <div>
               <div className="flex items-center space-x-2 mb-4">
                 <Car className="h-8 w-8 text-blue-400" />
-                <span className="text-xl font-bold">GetTransfer</span>
+              <span className="text-xl font-bold">{t('brand')}</span>
               </div>
               <p className="text-gray-400">
                 Güvenilir ve konforlu transfer hizmetleri için tek adresiniz.
               </p>
             </div>
             <div>
-              <h3 className="text-lg font-semibold mb-4">Müşteriler</h3>
+              <h3 className="text-lg font-semibold mb-4">{t('footer.customers')}</h3>
               <ul className="space-y-2 text-gray-400">
-                <li><Link to="/search" className="hover:text-white transition-colors">Transfer Ara</Link></li>
-                <li><Link to="/customer/dashboard" className="hover:text-white transition-colors">Rezervasyonlarım</Link></li>
-                <li><Link to="/register" className="hover:text-white transition-colors">Kayıt Ol</Link></li>
+                <li><Link to="/search" className="hover:text-white transition-colors">{t('footer.search')}</Link></li>
+                <li><Link to="/customer/dashboard" className="hover:text-white transition-colors">{t('footer.reservations')}</Link></li>
+                <li><Link to="/register" className="hover:text-white transition-colors">{t('footer.register')}</Link></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-lg font-semibold mb-4">Sürücüler</h3>
+              <h3 className="text-lg font-semibold mb-4">{t('footer.drivers')}</h3>
               <ul className="space-y-2 text-gray-400">
-                <li><Link to="/register/driver" className="hover:text-white transition-colors">Sürücü Ol</Link></li>
-                <li><Link to="/driver/dashboard" className="hover:text-white transition-colors">Sürücü Paneli</Link></li>
-                <li><Link to="/driver/documents" className="hover:text-white transition-colors">Dokümanlar</Link></li>
+                <li><Link to="/register/driver" className="hover:text-white transition-colors">{t('footer.beDriver')}</Link></li>
+                <li><Link to="/driver/dashboard" className="hover:text-white transition-colors">{t('footer.driverPanel')}</Link></li>
+                <li><Link to="/driver/documents" className="hover:text-white transition-colors">{t('footer.documents')}</Link></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-lg font-semibold mb-4">Yardım</h3>
+              <h3 className="text-lg font-semibold mb-4">{t('footer.help')}</h3>
               <ul className="space-y-2 text-gray-400">
-                <li><Link to="/help" className="hover:text-white transition-colors">Yardım Merkezi</Link></li>
-                <li><Link to="/contact" className="hover:text-white transition-colors">İletişim</Link></li>
-                <li><Link to="/terms" className="hover:text-white transition-colors">Şartlar ve Koşullar</Link></li>
+                <li><Link to="/help" className="hover:text-white transition-colors">{t('footer.helpCenter')}</Link></li>
+                <li><Link to="/contact" className="hover:text-white transition-colors">{t('footer.contact')}</Link></li>
+                <li><Link to="/terms" className="hover:text-white transition-colors">{t('footer.terms')}</Link></li>
               </ul>
             </div>
           </div>
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p>&copy; 2024 GetTransfer. Tüm hakları saklıdır.</p>
+            <p>&copy; 2024 {t('brand')}. {t('footer.copy')}</p>
           </div>
         </div>
       </footer>

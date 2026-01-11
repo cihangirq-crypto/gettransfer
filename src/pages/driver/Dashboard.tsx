@@ -8,11 +8,12 @@ import { Car, User, MapPin, Star, TrendingUp, Clock, CheckCircle, Settings, Came
 import { toast } from 'sonner'
 
 export const DriverDashboard = () => {
-  const { me, requests, register, refreshRequests, accept, updateLocation, setAvailable, refreshApproval, earnings, fetchEarnings, submitComplaint, approved, updateProfile } = useDriverStore()
+  const { me, requests, register, refreshRequests, accept, updateLocation, setAvailable, refreshApproval, earnings, fetchEarnings, submitComplaint, approved, updateProfile, isConnected } = useDriverStore()
   const { user } = useAuthStore()
   const { confirmPickup, appendRoutePoint, stopRouteRecordingAndSave, updateBookingStatus, saveRouteProgress } = useBookingStore()
   
-  const [form, setForm] = useState({ id: '', name: '', vehicleType: 'sedan', lat: 36.8969, lng: 30.7133 })
+  const [form, setForm] = useState({ id: '', name: '', vehicleType: 'sedan', lat: 0, lng: 0 })
+  const [locating, setLocating] = useState(true)
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null)
   const [vehicleModelInput, setVehicleModelInput] = useState('')
   const [vehicleImages, setVehicleImages] = useState<Array<{full:string, thumb:string}>>([])
@@ -25,13 +26,42 @@ export const DriverDashboard = () => {
   const [watchId, setWatchId] = useState<number | null>(null)
   const [activeBooking, setActiveBooking] = useState<import('@/types').Booking | null>(null)
   const [stats, setStats] = useState({ todayTrips: 0, weeklyTrips: 0, avgRating: 4.8, totalEarnings: 0 })
+  const [installEvt, setInstallEvt] = useState<any>(null)
 
   useEffect(() => { if (me) refreshRequests() }, [me, refreshRequests])
+
+  useEffect(() => {
+    const handler = (e: any) => { e.preventDefault(); setInstallEvt(e) }
+    window.addEventListener('beforeinstallprompt', handler as any)
+    return () => window.removeEventListener('beforeinstallprompt', handler as any)
+  }, [])
   
   useEffect(() => {
-    if (user && user.role === 'driver' && (!me || me.id !== user.id)) {
-      register({ id: user.id, name: user.name || 'Sürücü', vehicleType: 'sedan', location: { lat: form.lat, lng: form.lng }, available: true })
+    const sync = async () => {
+      if (user && user.role === 'driver' && (!me || me.id !== user.id)) {
+        try {
+          const res = await fetch(`/api/drivers/${user.id}`)
+          const j = await res.json()
+          if (res.ok && j.success && j.data) {
+            setForm(f => ({ ...f, name: j.data.name || f.name }))
+            setAvailable(!!j.data.available)
+            setStats(s => ({ ...s }))
+            // Race condition önlemek için eğer GPS zaten çalışıyorsa (0,0 değilse) sunucudan gelen konumu ezme
+            const serverLoc = j.data.location
+            const currentLoc = useDriverStore.getState().me?.location
+            const finalLoc = (currentLoc && (currentLoc.lat !== 0 || currentLoc.lng !== 0)) ? currentLoc : serverLoc
+
+            useDriverStore.setState({ me: { id: j.data.id, name: j.data.name || 'Sürücü', vehicleType: j.data.vehicleType || 'sedan', location: finalLoc, available: j.data.available } })
+            try { useDriverStore.getState().startRealtime() } catch {}
+          } else {
+            await register({ id: user.id, name: user.name || 'Sürücü', vehicleType: 'sedan', location: { lat: form.lat, lng: form.lng }, available: true })
+          }
+        } catch {
+          try { await register({ id: user.id, name: user.name || 'Sürücü', vehicleType: 'sedan', location: { lat: form.lat, lng: form.lng }, available: true }) } catch {}
+        }
+      }
     }
+    sync()
   }, [me, user])
   
   useEffect(() => {
@@ -39,18 +69,71 @@ export const DriverDashboard = () => {
     return () => clearInterval(interval)
   }, [me, refreshRequests])
   
+  // Location optimization refs
+  const lastLocRef = useRef<{lat:number, lng:number, time:number}|null>(null)
+
   useEffect(() => {
-    if (navigator.geolocation && me) {
+    if (navigator.geolocation && me?.id) {
       const id = navigator.geolocation.watchPosition(p => {
-        updateLocation({ lat: p.coords.latitude, lng: p.coords.longitude })
-        appendRoutePoint({ lat: p.coords.latitude, lng: p.coords.longitude })
-      }, () => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }) as unknown as number
+        setLocating(false)
+        
+        const newLat = p.coords.latitude
+        const newLng = p.coords.longitude
+        const now = Date.now()
+        
+        // Optimization: Throttle & Distance Filter
+        let shouldUpdate = false
+        
+        if (!lastLocRef.current) {
+          shouldUpdate = true
+        } else {
+          const { lat: oldLat, lng: oldLng, time: oldTime } = lastLocRef.current
+          const timeDiff = now - oldTime
+          
+          // Haversine distance (meters)
+          const R = 6371e3
+          const φ1 = oldLat * Math.PI/180
+          const φ2 = newLat * Math.PI/180
+          const Δφ = (newLat-oldLat) * Math.PI/180
+          const Δλ = (newLng-oldLng) * Math.PI/180
+          const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                    Math.cos(φ1) * Math.cos(φ2) *
+                    Math.sin(Δλ/2) * Math.sin(Δλ/2)
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+          const dist = R * c
+          
+          // Update if moved > 10m OR last update was > 10s ago
+          if (dist > 10 || timeDiff > 10000) {
+            shouldUpdate = true
+          }
+        }
+
+        if (shouldUpdate) {
+          lastLocRef.current = { lat: newLat, lng: newLng, time: now }
+          updateLocation({ lat: newLat, lng: newLng })
+          appendRoutePoint({ lat: newLat, lng: newLng })
+        }
+      }, (err) => {
+        console.warn('GPS hatası:', err.message)
+        toast.error('Konum alınamıyor: ' + err.message)
+      }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }) as unknown as number
       setWatchId(id)
       return () => { try { if (id) navigator.geolocation.clearWatch(id) } catch {} }
     }
-  }, [me])
+  }, [me?.id])
   
   useEffect(() => { if (me) { refreshApproval(); fetchEarnings() } }, [me])
+  useEffect(() => {
+    if (!me) return
+    let alive = true
+    const tick = async () => {
+      if (!alive) return
+      try { await refreshApproval() } catch {}
+      if (alive && approved !== true) setTimeout(tick, 5000)
+    }
+    setTimeout(tick, 5000)
+    return () => { alive = false }
+  }, [me, approved])
 
   useEffect(() => {
     if (!activeBooking) return
@@ -78,11 +161,29 @@ export const DriverDashboard = () => {
     return () => clearInterval(iv)
   }, [me?.id, me?.available])
 
+  // Audio for notifications
+  const notificationAudio = useRef<HTMLAudioElement | null>(null)
+  const prevRequestsLength = useRef(0)
+
   useEffect(() => {
+    notificationAudio.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3')
+  }, [])
+
+  useEffect(() => {
+    if (requests.length > prevRequestsLength.current) {
+      // New request received
+      toast.success('Yeni yolculuk talebi!', { duration: 5000 })
+      try {
+        notificationAudio.current?.play().catch(() => {})
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200])
+      } catch {}
+    }
+    prevRequestsLength.current = requests.length
+    
     if (!selectedRequest && requests.length > 0) {
       setSelectedRequest(requests[0])
     }
-  }, [requests.length])
+  }, [requests])
 
   useEffect(() => {
     if (me) {
@@ -181,8 +282,32 @@ export const DriverDashboard = () => {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Sürücü Paneli</h1>
-          <p className="text-gray-600">{me ? `Hoş geldiniz, ${me.name}` : 'Sisteme kayıt olun'}</p>
+          <p className="text-gray-600">
+            {me ? `Hoş geldiniz, ${me.name}` : 'Sisteme kayıt olun'} 
+            {me && (
+              <span className={`ml-3 text-sm font-medium px-2 py-0.5 rounded ${isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {isConnected ? 'Çevrimiçi' : 'Bağlantı Yok'}
+              </span>
+            )}
+          </p>
+          {installEvt && (
+            <div className="mt-3">
+              <Button size="sm" onClick={async()=>{ try { await installEvt.prompt(); setInstallEvt(null) } catch {} }}>Uygulamayı Kur</Button>
+            </div>
+          )}
         </div>
+
+        {/* Approval info */}
+        {me && approved === false && (
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8 rounded-lg">
+            <p className="text-sm text-yellow-900">Başvurunuz alındı. Yönetici onayı bekleniyor.</p>
+          </div>
+        )}
+        {me && approved === true && (
+          <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-8 rounded-lg">
+            <p className="text-sm text-green-900">Onaylandı. Tüm sürücü özellikleri aktif.</p>
+          </div>
+        )}
 
         {!me ? (
           <div className="bg-white rounded-xl shadow-lg p-8">
@@ -207,7 +332,7 @@ export const DriverDashboard = () => {
             </div>
           </div>
         ) : (
-          <>
+          <div>
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
               <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
@@ -251,24 +376,12 @@ export const DriverDashboard = () => {
               </div>
             </div>
 
-            {/* Approval Status */}
-            {!approved && (
-              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8 rounded-lg">
-                <div className="flex items-center">
-                  <AlertCircle className="h-6 w-6 text-yellow-400 mr-3" />
-                  <div>
-                    <p className="text-sm font-medium text-yellow-800">Hesabınız onay bekliyor</p>
-                    <p className="text-sm text-yellow-700 mt-1">Lütfen gerekli belgeleri yükleyin ve admin onayını bekleyin.</p>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Interactive blocks */}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Map & Requests */}
               <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-xl shadow-lg p-6">
-                  <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-bold text-gray-900 flex items-center">
                       <MapPin className="h-6 w-6 mr-2 text-blue-600" />
                       Konumunuz ve Rota
@@ -281,17 +394,23 @@ export const DriverDashboard = () => {
                       </label>
                     </div>
                   </div>
-                  <div className="h-96 rounded-lg overflow-hidden border border-gray-200">
+                  <div className="h-96 rounded-lg overflow-hidden border border-gray-200 relative">
+                    {locating && (!me.location || (me.location.lat === 0 && me.location.lng === 0)) && (
+                      <div className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center">
+                        <span className="text-sm text-gray-600">Konum alınıyor...</span>
+                      </div>
+                    )}
                     <OpenStreetMap
-                      center={me.location}
-                      customerLocation={me.location}
-                      destination={selectedRequest ? selectedRequest.pickup : undefined}
-                      drivers={[{ id: me.id, name: me.name, location: me.location, rating: 0, available: me.available }]}
-                      highlightDriverId={me.id}
-                      onMapClick={(loc) => updateLocation(loc)}
-                    />
+                        center={me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : { lat: 39.9334, lng: 32.8597 }}
+                        customerLocation={me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : { lat: 39.9334, lng: 32.8597 }}
+                        destination={selectedRequest ? selectedRequest.pickup : undefined}
+                        drivers={[{ id: me.id, name: me.name, location: me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : { lat: 39.9334, lng: 32.8597 }, rating: 0, available: me.available }]}
+                        highlightDriverId={me.id}
+                        onMapClick={(loc) => updateLocation(loc)}
+                        path={activeBooking ? (useBookingStore.getState().routePoints || []) : []}
+                      />
                   </div>
-                  {activeBooking && (
+                  {activeBooking && approved === true && (
                     <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                       <h3 className="font-semibold text-blue-900 mb-2">Aktif Rezervasyon</h3>
                       <p className="text-sm text-blue-800">{activeBooking.pickupLocation?.address} → {activeBooking.dropoffLocation?.address}</p>
@@ -303,17 +422,16 @@ export const DriverDashboard = () => {
                     </div>
                   )}
                 </div>
-
                 <div className="bg-white rounded-xl shadow-lg p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-bold text-gray-900 flex items-center">
                       <Clock className="h-6 w-6 mr-2 text-blue-600" />
                       Bekleyen Çağrılar
                     </h2>
-                    <Button size="sm" variant="outline" onClick={() => refreshRequests()}>Yenile</Button>
+                    <Button size="sm" variant="outline" onClick={() => refreshRequests()} disabled={approved !== true}>Yenile</Button>
                   </div>
                   <div className="space-y-3">
-                    {requests.map(r => (
+                    {approved === true && requests.map(r => (
                       <div key={r.id} className={`p-4 border-2 rounded-lg transition-all ${selectedRequest?.id === r.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}>
                         <div className="flex items-start justify-between">
                           <div className="flex-1 cursor-pointer" onClick={() => setSelectedRequest(r)}>
@@ -322,7 +440,7 @@ export const DriverDashboard = () => {
                             <p className="text-xs text-gray-500 mt-1">Araç tipi: {r.vehicleType}</p>
                           </div>
                           <div className="flex flex-col gap-2 ml-4">
-                            <Button size="sm" onClick={() => accept(r.id)}>Kabul Et</Button>
+                            <Button size="sm" onClick={() => accept(r.id)} disabled={approved !== true}>Kabul Et</Button>
                             {me && me.location && (
                               <a
                                 href={`https://www.google.com/maps/dir/?api=1&origin=${me.location.lat},${me.location.lng}&destination=${r.pickup.lat},${r.pickup.lng}`}
@@ -336,10 +454,16 @@ export const DriverDashboard = () => {
                         </div>
                       </div>
                     ))}
-                    {requests.length === 0 && (
+                    {approved === true && requests.length === 0 && (
                       <div className="text-center py-12 text-gray-500">
                         <Clock className="h-16 w-16 text-gray-300 mx-auto mb-3" />
                         <p>Bekleyen çağrı yok</p>
+                      </div>
+                    )}
+                    {approved === false && (
+                      <div className="text-center py-12 text-gray-500">
+                        <AlertCircle className="h-16 w-16 text-yellow-400 mx-auto mb-3" />
+                        <p>Onay bekleniyor. Yönetici onayladığında çağrılar görünür.</p>
                       </div>
                     )}
                   </div>
@@ -386,7 +510,8 @@ export const DriverDashboard = () => {
                   </div>
                 </div>
 
-                {/* Vehicle Card */}
+                
+                
                 <div className="bg-white rounded-xl shadow-lg p-6">
                   <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
                     <Car className="h-6 w-6 mr-2 text-blue-600" />
@@ -410,7 +535,6 @@ export const DriverDashboard = () => {
                   </div>
                 </div>
 
-                {/* Feedback Card */}
                 <div className="bg-white rounded-xl shadow-lg p-6">
                   <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
                     <FileText className="h-6 w-6 mr-2 text-blue-600" />
@@ -420,10 +544,9 @@ export const DriverDashboard = () => {
                     <textarea name="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Sorununuzu veya önerinizi yazın" rows={4} />
                     <Button type="submit" className="w-full">Gönder</Button>
                   </form>
-                </div>
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>

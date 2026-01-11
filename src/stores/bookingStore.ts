@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { API } from '@/utils/api'
+import { io as ioClient, Socket } from 'socket.io-client'
 import { Booking, Driver, SearchFilters } from '@/types';
 
 interface BookingState {
@@ -9,13 +10,16 @@ interface BookingState {
   isLoading: boolean;
   error: string | null;
   updateInterval: NodeJS.Timeout | null;
+  socket: Socket | null;
   trackingLocation: { lat: number, lng: number } | null;
   routeRecording: boolean;
   routePoints: Array<{ lat: number, lng: number }>;
+  lastRequestId: string | null;
   
   // Actions
   searchDrivers: (pickup: any, dropoff: any, filters: SearchFilters) => Promise<void>;
-  createBooking: (bookingData: any) => Promise<void>;
+  cancelLastRequest: (customerId?: string) => Promise<void>;
+  createBooking: (bookingData: any) => Promise<Booking>;
   updateBookingStatus: (bookingId: string, status: Booking['status']) => Promise<void>;
   setCurrentBooking: (booking: Booking | null) => void;
   setSearchFilters: (filters: SearchFilters) => void;
@@ -38,9 +42,11 @@ export const useBookingStore = create<BookingState>()((set, get) => ({
   isLoading: false,
   error: null,
   updateInterval: null as NodeJS.Timeout | null,
+  socket: null,
   trackingLocation: null,
   routeRecording: false,
   routePoints: [],
+  lastRequestId: null,
 
   searchDrivers: async (pickup: any, dropoff: any, filters: SearchFilters) => {
     set({ isLoading: true, error: null });
@@ -78,7 +84,7 @@ export const useBookingStore = create<BookingState>()((set, get) => ({
         currentLocation: c.location,
         lastLocationUpdate: new Date().toISOString(),
       }));
-      set({ availableDrivers: mapped, searchFilters: filters, isLoading: false, error: null, trackingLocation: { lat: pickup.lat, lng: pickup.lng } });
+      set({ availableDrivers: mapped, searchFilters: filters, isLoading: false, error: null, trackingLocation: { lat: pickup.lat, lng: pickup.lng }, lastRequestId: reqBody.id });
     } catch (error) {
       set({
         isLoading: false,
@@ -170,23 +176,83 @@ export const useBookingStore = create<BookingState>()((set, get) => ({
   },
 
   startRealTimeUpdates: () => {
-    const { updateInterval } = get();
-    if (updateInterval) clearInterval(updateInterval);
-    const interval = setInterval(async () => {
-      const { trackingLocation } = get();
-      if (trackingLocation) {
-        await get().refreshApprovedDriversNear(trackingLocation);
+    const { socket, trackingLocation } = get();
+    if (socket) return;
+    const origin = (import.meta.env.VITE_API_ORIGIN as string) || `http://${window.location.hostname}:3005`;
+    const s = ioClient(origin, { transports: ['websocket'] });
+    const calc = (a: {lat:number,lng:number}, b: {lat:number,lng:number}) => {
+      const R = 6371; const dLat = (b.lat-a.lat)*Math.PI/180; const dLng=(b.lng-a.lng)*Math.PI/180;
+      const x = Math.sin(dLat/2)**2 + Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2
+      return R*2*Math.atan2(Math.sqrt(x), Math.sqrt(1-x))
+    }
+    s.on('driver:update', (d: any) => {
+      const { availableDrivers } = get();
+      const exists = availableDrivers.find((x)=>x.id===d.id);
+      const updated = exists
+        ? availableDrivers.map((x)=> x.id===d.id ? { ...x, isAvailable: !!d.available, currentLocation: d.location, lastLocationUpdate: new Date().toISOString() } : x)
+        : [...availableDrivers, {
+            id: d.id,
+            email: d.email || `${d.id}@drivers.local`, name: d.name, phone: '', role: 'driver', isVerified: true,
+            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), licenseNumber: d.licenseNumber || '',
+            vehicleType: d.vehicleType, vehicleModel: d.vehicleModel || 'Araç', licensePlate: d.licensePlate || '', rating: 4.7, totalRides: 0,
+            isAvailable: !!d.available, currentLocation: d.location, lastLocationUpdate: new Date().toISOString()
+          }]
+      const loc = get().trackingLocation;
+      const sorted = loc ? updated.filter(u=>u.currentLocation && u.isAvailable).sort((a,b)=>calc(loc,a.currentLocation!)-calc(loc,b.currentLocation!)) : updated;
+      set({ availableDrivers: sorted as any });
+    });
+    s.on('booking:update', async (r: any) => {
+      const { currentBooking } = get();
+      if (currentBooking && currentBooking.id === r.id) {
+        set({ currentBooking: { ...currentBooking, status: r.status, driverId: r.driverId } as any });
+      } else if (r && r.status === 'accepted' && r.pickup && r.dropoff) {
+        try {
+          const payload = {
+            customerId: r.customerId,
+            driverId: r.driverId,
+            pickupLocation: { lat: r.pickup.lat, lng: r.pickup.lng, address: r.pickup.address },
+            dropoffLocation: { lat: r.dropoff.lat, lng: r.dropoff.lng, address: r.dropoff.address },
+            passengerCount: get().searchFilters.passengerCount || 1,
+            vehicleType: r.vehicleType,
+            status: 'accepted',
+            basePrice: 0
+          }
+          const created = await get().createBooking(payload)
+          set({ currentBooking: created })
+        } catch {}
       }
-    }, 3000);
-    set({ updateInterval: interval });
+    });
+    s.on('ride:cancelled', (_ev: any) => {
+      set({ error: 'Talep iptal edildi', availableDrivers: [] })
+    })
+    s.on('booking:create', (b: any) => {
+      set({ currentBooking: b })
+    })
+    set({ socket: s });
+    if (trackingLocation) {
+      get().refreshApprovedDriversNear(trackingLocation);
+      const iv = setInterval(() => {
+        const loc = get().trackingLocation;
+        if (loc) get().refreshApprovedDriversNear(loc);
+      }, 5000);
+      set({ updateInterval: iv as unknown as NodeJS.Timeout });
+    }
+  },
+  cancelLastRequest: async (customerId?: string) => {
+    const { lastRequestId } = get();
+    if (!lastRequestId) return;
+    try {
+      await fetch(`${API}/drivers/cancel`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: lastRequestId, customerId })
+      });
+      set({ availableDrivers: [], lastRequestId: null });
+    } catch {}
   },
 
   stopRealTimeUpdates: () => {
-    const { updateInterval } = get();
-    if (updateInterval) {
-      clearInterval(updateInterval);
-      set({ updateInterval: null });
-    }
+    const { socket, updateInterval } = get();
+    if (socket) { socket.disconnect(); set({ socket: null }); }
+    if (updateInterval) { clearInterval(updateInterval); set({ updateInterval: null }); }
   },
   refreshApprovedDriversNear: async (location: { lat: number, lng: number }) => {
     try {

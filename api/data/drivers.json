@@ -1,0 +1,60 @@
+[
+  {
+    "id": "drv_fatih",
+    "name": "fatih",
+    "email": "fatih@test.com",
+    "vehicleType": "sedan",
+    "vehicleModel": "Toyota Corolla Sedan",
+    "licensePlate": "34 ABC 987",
+    "docs": [
+      {
+        "name": "license"
+      },
+      {
+        "name": "vehicle_registration"
+      },
+      {
+        "name": "insurance"
+      },
+      {
+        "name": "profile_photo"
+      }
+    ],
+    "location": {
+      "lat": 36.8969,
+      "lng": 30.7133
+    },
+    "available": true,
+    "approved": true,
+    "password": "123456"
+  },
+  {
+    "id": "drv_vedat",
+    "name": "vedat",
+    "tcid": "NA",
+    "licenseNumber": "NA",
+    "vehicleType": "sedan",
+    "vehicleModel": "Toyota Corolla Sedan",
+    "licensePlate": "34 ABC 987",
+    "docs": [
+      {
+        "name": "license"
+      },
+      {
+        "name": "vehicle_registration"
+      },
+      {
+        "name": "insurance"
+      },
+      {
+        "name": "profile_photo"
+      }
+    ],
+    "location": {
+      "lat": 36.8969,
+      "lng": 30.7133
+    },
+    "available": true,
+    "approved": true
+  }
+]

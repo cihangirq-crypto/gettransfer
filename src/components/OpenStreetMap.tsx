@@ -45,10 +45,16 @@ interface OpenStreetMapProps {
 
 const MapController: React.FC<{ center: Location }> = ({ center }) => {
   const map = useMap();
+  const dragging = useRef(false);
+
+  useEffect(() => {
+    map.on('dragstart', () => { dragging.current = true; });
+    map.on('dragend', () => { dragging.current = false; });
+  }, [map]);
   
   useEffect(() => {
-    if (center && center.lat && center.lng) {
-      map.setView([center.lat, center.lng], 15);
+    if (center && center.lat && center.lng && !dragging.current) {
+      map.panTo([center.lat, center.lng], { animate: true });
     }
   }, [center, map]);
   

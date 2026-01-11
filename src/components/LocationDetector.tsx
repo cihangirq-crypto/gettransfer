@@ -3,6 +3,7 @@ import { MapPin, Navigation, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { toast } from 'sonner';
 import OpenStreetMap from '@/components/OpenStreetMap';
+import { useI18n } from '@/i18n';
 
 interface LocationDetectorProps {
   onLocationDetected: (location: { lat: number; lng: number }) => void;
@@ -13,6 +14,7 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
   onLocationDetected,
   onLocationError,
 }) => {
+  const { t } = useI18n();
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [hasAttemptedLocation, setHasAttemptedLocation] = useState(false);
@@ -21,12 +23,7 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
   const [lastFixTime, setLastFixTime] = useState<number | null>(null);
   const [locationSource, setLocationSource] = useState<'geolocation' | null>(null);
   const locatingRef = React.useRef(false);
-  const TURKEY_BOUNDS = { minLat: 35, maxLat: 42.5, minLng: 26, maxLng: 45 };
   const ANTALYA_CENTER = { lat: 36.8969, lng: 30.7133 };
-  const isInTurkey = (loc: { lat: number; lng: number }) => (
-    loc.lat >= TURKEY_BOUNDS.minLat && loc.lat <= TURKEY_BOUNDS.maxLat &&
-    loc.lng >= TURKEY_BOUNDS.minLng && loc.lng <= TURKEY_BOUNDS.maxLng
-  );
   const [currentLoc, setCurrentLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [showCalibration, setShowCalibration] = useState(false);
   const [history, setHistory] = useState<Array<{ lat: number; lng: number; acc: number | null; src: string; t: number }>>([]);
@@ -58,20 +55,28 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
       if (dist > 200 && (acc ?? 9999) > 300) allow = false;
       if (acc !== null && acc > 1000 && dt < 5) allow = false;
     }
-    if (!isInTurkey(loc)) {
-      allow = false;
-    }
+    // global kullanım için ülke sınırı kısıtı kaldırıldı
     setHistory(h => [{ lat: loc.lat, lng: loc.lng, acc, src, t: now }, ...h].slice(0, 10));
     if (!allow) {
       setShowCalibration(true);
       toast.warning('Konum doğruluğu düşük, kalibrasyon önerildi');
       return;
     }
-    onLocationDetected(loc);
-    setCurrentLoc(loc);
+    let emitLoc = loc;
+    if (prev) {
+      const alpha = acc !== null
+        ? (acc < 50 ? 0.8 : acc < 150 ? 0.6 : 0.4)
+        : 0.5;
+      emitLoc = {
+        lat: prev.lat + alpha * (loc.lat - prev.lat),
+        lng: prev.lng + alpha * (loc.lng - prev.lng),
+      };
+    }
+    onLocationDetected(emitLoc);
+    setCurrentLoc(emitLoc);
     setLocationSource(src);
     lastPropagateRef.current = now;
-    lastLocRef.current = loc;
+    lastLocRef.current = emitLoc;
   };
   
 
@@ -101,11 +106,34 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
     // Güvensiz bağlamlarda da geolocation'u dene; bir çok tarayıcı localhost harici IP'de reddedebilir
     // Bu nedenle hata akışında manuel haritaya yönlendiriyoruz
 
+    const ipFallback = async () => {
+      try {
+        const r = await fetch('https://ipapi.co/json/');
+        if (!r.ok) throw new Error('ip_fallback_failed');
+        const j = await r.json();
+        if (typeof j.latitude === 'number' && typeof j.longitude === 'number') {
+          const loc = { lat: j.latitude, lng: j.longitude };
+          setIsLocating(false);
+          locatingRef.current = false;
+          setAccuracy(1000);
+          setLastFixTime(Date.now());
+          propagate(loc, 1000, 'geolocation');
+          toast.info('IP tabanlı yaklaşık konum kullanıldı');
+          return true;
+        }
+      } catch {}
+      return false;
+    };
+
     if (!navigator.geolocation) {
-      const error = 'Tarayıcınız konum özelliğini desteklemiyor.';
-      setLocationError(error);
-      onLocationError(error);
-      setIsLocating(false);
+      const used = await ipFallback();
+      if (!used) {
+        const error = 'Tarayıcınız konum özelliğini desteklemiyor.';
+        setLocationError(error);
+        onLocationError(error);
+        setIsLocating(false);
+        setShowCalibration(true);
+      }
       return;
     }
 
@@ -118,6 +146,11 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
     const perm = await queryPermission();
     if (perm === 'denied') {
       toast.error('Konum izni reddedildi. Tarayıcı ayarlarından konum iznini açın.');
+    }
+
+    if (!isSecure) {
+      const used = await ipFallback();
+      if (used) return;
     }
 
     navigator.geolocation.getCurrentPosition(
@@ -194,9 +227,14 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
         }
         
         console.error('📍 Konum alma hatası:', error);
-        setLocationError(errorMessage);
-        onLocationError(errorMessage);
-        setShowCalibration(true);
+        (async () => {
+          const used = await ipFallback();
+          if (!used) {
+            setLocationError(errorMessage);
+            onLocationError(errorMessage);
+            setShowCalibration(true);
+          }
+        })();
       },
       options
     );
@@ -261,7 +299,7 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center">
           <MapPin className="h-5 w-5 mr-2 text-blue-600" />
-          Konumunuzu Belirleyin
+          {t('detector.title')}
         </h3>
         {isLocating && (
           <div className="flex items-center text-sm text-blue-600">
@@ -275,7 +313,7 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
         <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
           <div className="flex items-center">
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600 mr-2"></div>
-            <span className="text-sm text-yellow-800">Konumunuz otomatik olarak alınıyor...</span>
+            <span className="text-sm text-yellow-800">{t('detector.autoFetching')}</span>
           </div>
         </div>
       )}
@@ -284,7 +322,7 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
         <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-4">
           <div className="flex items-center mb-2">
             <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
-            <span className="text-red-800 font-medium">Konum Alınamadı</span>
+            <span className="text-red-800 font-medium">{t('detector.error.title')}</span>
           </div>
           <p className="text-red-700 text-sm mb-3">{locationError}</p>
           <div className="flex space-x-2">
@@ -295,7 +333,7 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
               disabled={isLocating}
             >
               <Navigation className="h-4 w-4 mr-1" />
-              Tekrar Dene
+              {t('detector.retry')}
             </Button>
             <Button
               size="sm"
@@ -303,14 +341,14 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
               disabled={isLocating}
             >
               <MapPin className="h-4 w-4 mr-1" />
-              Manuel Konum
+              {t('detector.manual')}
             </Button>
           </div>
         </div>
       ) : (
         <div className="space-y-3">
           <p className="text-gray-600 text-sm">
-            Konumunuzu cihazınızın konum servisleri (GPS/Wi‑Fi/IP) ile belirliyoruz.
+            {t('detector.tip')}
           </p>
           <div className="flex space-x-2">
             <Button
@@ -319,7 +357,7 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
               className="flex-1"
             >
               <Navigation className="h-4 w-4 mr-2" />
-              {isLocating ? 'Konum Aranıyor...' : 'Konumu Kalibre Et'}
+              {isLocating ? t('detector.autoFetching') : t('detector.manual')}
             </Button>
             <Button
               variant="outline"
@@ -327,7 +365,7 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
               disabled={isLocating}
             >
               <MapPin className="h-4 w-4 mr-2" />
-              Manuel
+              {t('detector.manual')}
             </Button>
           </div>
         </div>

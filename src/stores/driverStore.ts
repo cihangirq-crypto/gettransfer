@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { API } from '@/utils/api'
+import { io as ioClient, Socket } from 'socket.io-client'
 
 type DriverSession = {
   id: string
@@ -32,6 +33,9 @@ type DriverState = {
   fetchEarnings: () => Promise<void>
   submitComplaint: (text: string) => Promise<void>
   updateProfile: (patch: Partial<{ name: string, vehicleModel: string, licensePlate: string }>) => Promise<void>
+  startRealtime: () => void
+  socket?: Socket | null
+  isConnected?: boolean
 }
 
 export const useDriverStore = create<DriverState>()((set, get) => ({
@@ -40,27 +44,36 @@ export const useDriverStore = create<DriverState>()((set, get) => ({
   rejectedReason: undefined,
   earnings: null,
   requests: [],
+  socket: null,
+  isConnected: false,
   register: async (session) => {
     const res = await fetch(`${API}/drivers/register`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(session)
     })
     if (!res.ok) throw new Error('register_failed')
     set({ me: session })
+    get().startRealtime()
   },
   refreshRequests: async () => {
-    const res = await fetch(`${API}/drivers/requests`)
+    const { me } = get()
+    const url = me?.vehicleType ? `${API}/drivers/requests?vehicleType=${me.vehicleType}` : `${API}/drivers/requests`
+    const res = await fetch(url)
     const data = await res.json()
     if (!res.ok || !data.success) throw new Error('requests_failed')
-    set({ requests: data.data })
+    const arr = Array.isArray(data.data) ? data.data : []
+    const dedup = Array.from(new Map<string, any>(arr.map((x:any)=>[x.id,x])).values())
+    set({ requests: dedup as any })
   },
   updateLocation: async (loc) => {
     const { me } = get()
     if (!me) return
-    const res = await fetch(`${API}/drivers/location`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: me.id, location: loc })
-    })
-    if (!res.ok) throw new Error('location_failed')
+    // Optimistic update
     set({ me: { ...me, location: loc } })
+    try {
+      await fetch(`${API}/drivers/location`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: me.id, location: loc })
+      })
+    } catch {}
   },
   accept: async (requestId) => {
     const { me } = get()
@@ -116,4 +129,39 @@ export const useDriverStore = create<DriverState>()((set, get) => ({
     if (!res.ok || !data.success) throw new Error('profile_update_failed')
     set({ me: { ...me, ...patch } as any })
   },
+  startRealtime: () => {
+    const { socket, me } = get()
+    if (socket) return
+    const origin = (import.meta.env.VITE_API_ORIGIN as string) || `http://${window.location.hostname}:3005`
+    const s = ioClient(origin, { transports: ['websocket'], reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 1000 })
+    
+    s.on('connect', () => {
+      set({ isConnected: true })
+      get().refreshRequests()
+    })
+    s.on('disconnect', () => {
+      set({ isConnected: false })
+    })
+
+    s.on('ride:request', (r: any) => {
+      const { me } = get()
+      if (me && r?.vehicleType === me?.vehicleType) {
+        const { requests } = get()
+        const next = requests.some((x)=>x.id===r.id)
+          ? requests
+          : [...requests, { id: r.id, customerId: r.customerId, pickup: r.pickup, dropoff: r.dropoff, vehicleType: r.vehicleType }]
+        const dedup = Array.from(new Map<string, any>(next.map((x:any)=>[x.id,x])).values())
+        set({ requests: dedup as any })
+      }
+    })
+    s.on('ride:accepted', (r: any) => {
+      const { requests } = get()
+      set({ requests: requests.filter((x)=>x.id!==r.id) })
+    })
+    s.on('ride:cancelled', (r: any) => {
+      const { requests } = get()
+      set({ requests: requests.filter((x)=>x.id!==r.id) })
+    })
+    set({ socket: s })
+  }
 }))
