@@ -2,6 +2,8 @@
 
 Modern React + TypeScript + Vite tabanlı bir “anlık transfer ve sürücü takibi” uygulaması. Ön yüz (Vite React) ve arka uç (Express) birlikte çalışır; harita için OpenStreetMap/Leaflet kullanılır, e2e testler Playwright ile doğrulanır.
 
+Yeni sohbet/agent/AI ile hızlı başlamak için: [AI_START_HERE.md](file:///c:/projeler/gettransfer/AI_START_HERE.md)
+
 ## Özellikler
 - Anlık araç çağırma akışı ve aday sürücü listesi
 - OpenStreetMap ile canlı konum ve varış noktası gösterimi
@@ -61,3 +63,7 @@ Sonra e2e testleri çalıştırın:
 
 ## Ortam Değişkenleri
 Geliştirme için `.env` dosyası kullanılabilir. Üretim sırlarını depoya koymayın.
+
+Kurulum ve secret yönetimi için: [SECRETS_AND_SETUP.md](file:///c:/projeler/gettransfer/docs/SECRETS_AND_SETUP.md)
+
+Yeni sohbet/agent/AI ile aynı şekilde devam etmek için: [AI_WORKSPACE_RULES.md](file:///c:/projeler/gettransfer/docs/AI_WORKSPACE_RULES.md)

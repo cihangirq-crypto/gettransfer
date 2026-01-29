@@ -21,7 +21,7 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
   const watchIdRef = React.useRef<number | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [lastFixTime, setLastFixTime] = useState<number | null>(null);
-  const [locationSource, setLocationSource] = useState<'geolocation' | null>(null);
+  const [locationSource, setLocationSource] = useState<'geolocation' | 'ip' | 'manual' | null>(null);
   const locatingRef = React.useRef(false);
   const ANTALYA_CENTER = { lat: 36.8969, lng: 30.7133 };
   const [currentLoc, setCurrentLoc] = useState<{ lat: number; lng: number } | null>(null);
@@ -40,13 +40,14 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
     const h = sinDLat*sinDLat + Math.cos(la1)*Math.cos(la2)*sinDLng*sinDLng;
     return 2 * R * Math.asin(Math.sqrt(h));
   };
-  const propagate = (loc: {lat:number;lng:number}, acc: number | null, src: 'geolocation') => {
+  const propagate = (loc: {lat:number;lng:number}, acc: number | null, src: 'geolocation' | 'ip' | 'manual') => {
     const now = Date.now();
     const prev = lastLocRef.current;
     let allow = true;
     if (acc !== null) {
       if (src === 'geolocation' && acc > 200) allow = false;
     }
+    if (src === 'ip' && (acc === null || acc >= 500)) allow = false;
     if (prev) {
       const dt = Math.max(1, (now - lastPropagateRef.current) / 1000);
       const dist = haversine(prev, loc);
@@ -58,6 +59,9 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
     // global kullanım için ülke sınırı kısıtı kaldırıldı
     setHistory(h => [{ lat: loc.lat, lng: loc.lng, acc, src, t: now }, ...h].slice(0, 10));
     if (!allow) {
+      try { console.info('location_event', { src, acc, allow: false, secureContext: window.isSecureContext }) } catch {}
+      setCurrentLoc(loc);
+      setLocationSource(src);
       setShowCalibration(true);
       toast.warning('Konum doğruluğu düşük, kalibrasyon önerildi');
       return;
@@ -77,6 +81,10 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
     setLocationSource(src);
     lastPropagateRef.current = now;
     lastLocRef.current = emitLoc;
+    try { console.info('location_event', { src, acc, allow: true, secureContext: window.isSecureContext }) } catch {}
+    try {
+      localStorage.setItem('lastKnownLocation', JSON.stringify({ lat: emitLoc.lat, lng: emitLoc.lng, ts: now }))
+    } catch {}
   };
   
 
@@ -117,7 +125,8 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
           locatingRef.current = false;
           setAccuracy(1000);
           setLastFixTime(Date.now());
-          propagate(loc, 1000, 'geolocation');
+          propagate(loc, 1000, 'ip');
+          setShowCalibration(true);
           toast.info('IP tabanlı yaklaşık konum kullanıldı');
           return true;
         }
@@ -254,7 +263,16 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
   }, [hasAttemptedLocation]);
 
   const handleManualLocation = () => {
-    const defaultLocation = ANTALYA_CENTER;
+    let defaultLocation = currentLoc || lastLocRef.current || ANTALYA_CENTER;
+    try {
+      const raw = localStorage.getItem('lastKnownLocation')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
+          defaultLocation = { lat: parsed.lat, lng: parsed.lng }
+        }
+      }
+    } catch {}
     console.log('📍 Kalibrasyon için harita açılıyor:', defaultLocation);
     setIsLocating(false);
     setLocationError(null);
@@ -380,7 +398,14 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
             <p className="mt-1">Doğruluk: ±{Math.round(accuracy)} m {lastFixTime ? `• ${new Date(lastFixTime).toLocaleTimeString()}` : ''}</p>
           )}
           {locationSource && (
-            <p className="mt-1">Kaynak: Tarayıcı Geolocation</p>
+            <p className="mt-1">
+              Kaynak:{' '}
+              {locationSource === 'geolocation'
+                ? 'Tarayıcı Geolocation'
+                : locationSource === 'ip'
+                  ? 'IP yaklaşık konum'
+                  : 'Manuel seçim'}
+            </p>
           )}
           {history.length > 0 && (
             <div className="mt-2">
@@ -404,14 +429,14 @@ export const LocationDetector: React.FC<LocationDetectorProps> = ({
           setShowCalibration(false);
           setIsLocating(false);
           locatingRef.current = false;
-          propagate(loc, 50, 'geolocation');
+          propagate(loc, 50, 'manual');
           toast.success('Konum el ile güncellendi');
         }}
         onMapClick={(loc) => {
           setShowCalibration(false);
           setIsLocating(false);
           locatingRef.current = false;
-          propagate(loc, 50, 'geolocation');
+          propagate(loc, 50, 'manual');
           toast.success('Konum el ile güncellendi');
         }}
         accuracy={accuracy}

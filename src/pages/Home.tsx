@@ -18,6 +18,14 @@ export default function Home() {
             <p className="text-xl md:text-2xl text-blue-100 mb-8">
               Konumunuza en yakın sürücülerle anında transfer
             </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Link to="/reserve">
+                <Button size="lg" variant="secondary">Rezervasyon Yap</Button>
+              </Link>
+              <Link to="/reservations">
+                <Button size="lg" variant="outline" className="border-white text-white hover:bg-white/10">Rezervasyonlarım</Button>
+              </Link>
+            </div>
           </div>
         </div>
       </section>

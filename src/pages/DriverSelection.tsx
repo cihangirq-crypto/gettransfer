@@ -62,7 +62,7 @@ export const DriverSelection: React.FC = () => {
 
   useEffect(() => {
     if (currentBooking && currentBooking.status === 'accepted') {
-      navigate('/tracking/active');
+      navigate(`/tracking/${currentBooking.id}`);
     }
   }, [currentBooking])
 
@@ -111,27 +111,16 @@ export const DriverSelection: React.FC = () => {
     setIsLoading(true);
     
     try {
-      // Update offer status
       setOffers(prev => prev.map(o => 
         o.id === offerId ? { ...o, status: 'accepted' } : { ...o, status: 'rejected' }
       ));
 
-      // Create booking
-      const bookingPayload = {
-        ...bookingData,
-        driverId: offer.driverId,
-        finalPrice: offer.offeredPrice,
-        selectedDriver: offer.driverName,
-        status: 'accepted',
-      };
-
-      await createBooking(bookingPayload);
-      
-      toast.success(`Rezervasyon kabul edildi! Sürücü: ${offer.driverName}`);
-      
-      // Navigate to tracking page handled by useEffect
+      const pick = bookingData.pickupLocation || { lat: bookingData.pickupLat, lng: bookingData.pickupLng, address: bookingData.pickupAddress || 'Alış Noktası' }
+      const drop = bookingData.dropoffLocation || { lat: bookingData.dropoffLat, lng: bookingData.dropoffLng, address: bookingData.destinationAddress || 'Varış Noktası' }
+      await searchDrivers(pick, drop, { vehicleType: bookingData.vehicleType || 'sedan', passengerCount: bookingData.passengerCount || 1, targetDriverId: offer.driverId })
+      toast.success(`Çağrı gönderildi. ${offer.driverName} kabul edince takip başlayacak.`)
     } catch (error) {
-      toast.error('Rezervasyon oluşturulamadı');
+      toast.error('Çağrı gönderilemedi');
     } finally {
       setIsLoading(false);
     }

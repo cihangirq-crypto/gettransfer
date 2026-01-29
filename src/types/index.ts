@@ -28,7 +28,10 @@ export interface Driver extends User {
 
 export interface Booking {
   id: string;
+  reservationCode?: string;
   customerId: string;
+  guestName?: string;
+  guestPhone?: string;
   driverId?: string;
   pickupLocation: {
     lat: number;
@@ -42,11 +45,24 @@ export interface Booking {
   };
   pickupTime: string;
   passengerCount: number;
+  adults?: number;
+  children?: number;
   vehicleType: 'sedan' | 'suv' | 'van' | 'luxury';
+  isImmediate?: boolean;
+  flightNumber?: string;
+  nameBoard?: string;
+  returnTrip?: { enabled: boolean; pickupTime?: string };
+  extras?: {
+    notes?: string;
+    tags?: string[];
+    promoCode?: string;
+    termsAccepted?: boolean;
+  };
   status: 'pending' | 'accepted' | 'driver_en_route' | 'driver_arrived' | 'in_progress' | 'completed' | 'cancelled';
   basePrice: number;
   finalPrice?: number;
   specialRequests?: string;
+  paymentMethod?: 'card' | 'cash';
   route?: {
     driverPath: Array<{ lat: number; lng: number }>;
     customerPath?: Array<{ lat: number; lng: number }>;
@@ -97,6 +113,7 @@ export interface SearchFilters {
   maxPrice?: number;
   minRating?: number;
   passengerCount?: number;
+  targetDriverId?: string;
 }
 
 export interface AuthResponse {

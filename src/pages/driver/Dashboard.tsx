@@ -4,8 +4,11 @@ import { useAuthStore } from '@/stores/authStore'
 import { useBookingStore } from '@/stores/bookingStore'
 import OpenStreetMap from '@/components/OpenStreetMap'
 import { Button } from '@/components/ui/Button'
+import { io as ioClient, type Socket } from 'socket.io-client'
 import { Car, User, MapPin, Star, TrendingUp, Clock, CheckCircle, Settings, Camera, FileText, DollarSign, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
+import { DEFAULT_CENTER } from '@/config/env'
+import { currencySymbol } from '@/utils/pricing'
 
 export const DriverDashboard = () => {
   const { me, requests, register, refreshRequests, accept, updateLocation, setAvailable, refreshApproval, earnings, fetchEarnings, submitComplaint, approved, updateProfile, isConnected } = useDriverStore()
@@ -25,8 +28,25 @@ export const DriverDashboard = () => {
   const [selectedRequest, setSelectedRequest] = useState<RideRequest | null>(null)
   const [watchId, setWatchId] = useState<number | null>(null)
   const [activeBooking, setActiveBooking] = useState<import('@/types').Booking | null>(null)
+  const [customerLiveLocation, setCustomerLiveLocation] = useState<{ lat: number, lng: number } | null>(null)
   const [stats, setStats] = useState({ todayTrips: 0, weeklyTrips: 0, avgRating: 4.8, totalEarnings: 0 })
   const [installEvt, setInstallEvt] = useState<any>(null)
+  const bookingSocketRef = useRef<Socket | null>(null)
+
+  const calcMeters = (a?: { lat: number, lng: number } | null, b?: { lat: number, lng: number } | null) => {
+    if (!a || !b) return null
+    const R = 6371000
+    const dLat = (b.lat - a.lat) * Math.PI / 180
+    const dLng = (b.lng - a.lng) * Math.PI / 180
+    const la1 = a.lat * Math.PI / 180
+    const la2 = b.lat * Math.PI / 180
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2
+    return 2 * R * Math.asin(Math.sqrt(h))
+  }
+  const metersToPickup = activeBooking ? calcMeters(me?.location, activeBooking.pickupLocation) : null
+  const metersToDropoff = activeBooking ? calcMeters(me?.location, activeBooking.dropoffLocation) : null
+  const nearCustomer = customerLiveLocation ? calcMeters(me?.location, customerLiveLocation) : null
+  const nearCustomerNotifiedRef = useRef(false)
 
   useEffect(() => { if (me) refreshRequests() }, [me, refreshRequests])
 
@@ -144,7 +164,43 @@ export const DriverDashboard = () => {
   }, [activeBooking])
 
   useEffect(() => {
-    if (!me || !me.available) return
+    const b = activeBooking
+    if (!b?.id) {
+      setCustomerLiveLocation(null)
+      if (bookingSocketRef.current) {
+        try { bookingSocketRef.current.disconnect() } catch {}
+        bookingSocketRef.current = null
+      }
+      return
+    }
+    const origin = (import.meta.env.VITE_API_ORIGIN as string) || `http://${window.location.hostname}:3005`
+    const s = ioClient(origin, { transports: ['websocket'], reconnection: true })
+    bookingSocketRef.current = s
+    s.on('connect', () => {
+      s.emit('booking:join', { bookingId: b.id })
+    })
+    s.on('customer:update', (ev: any) => {
+      if (ev?.bookingId !== b.id) return
+      if (ev?.location && typeof ev.location.lat === 'number' && typeof ev.location.lng === 'number') {
+        setCustomerLiveLocation(ev.location)
+      }
+    })
+    s.on('booking:update', (next: any) => {
+      if (next?.id !== b.id) return
+      setActiveBooking(next)
+    })
+    fetch(`/api/bookings/${b.id}/customer-location`).then(r => r.json()).then(j => {
+      if (j?.success && j?.data && typeof j.data.lat === 'number' && typeof j.data.lng === 'number') setCustomerLiveLocation(j.data)
+    }).catch(() => {})
+    return () => {
+      try { s.emit('booking:leave', { bookingId: b.id }) } catch {}
+      s.disconnect()
+      bookingSocketRef.current = null
+    }
+  }, [activeBooking?.id])
+
+  useEffect(() => {
+    if (!me) return
     const poll = async () => {
       if (document.visibilityState !== 'visible') return
       try {
@@ -159,7 +215,7 @@ export const DriverDashboard = () => {
     poll()
     const iv = setInterval(poll, 5000)
     return () => clearInterval(iv)
-  }, [me?.id, me?.available])
+  }, [me?.id])
 
   // Audio for notifications
   const notificationAudio = useRef<HTMLAudioElement | null>(null)
@@ -225,6 +281,18 @@ export const DriverDashboard = () => {
     }
     applyDefaults()
   }, [me])
+
+  useEffect(() => {
+    if (typeof nearCustomer !== 'number') return
+    if (nearCustomer <= 50) {
+      if (!nearCustomerNotifiedRef.current) {
+        nearCustomerNotifiedRef.current = true
+        toast.success('Müşteri ile aynı konumdasınız.')
+      }
+    } else {
+      nearCustomerNotifiedRef.current = false
+    }
+  }, [nearCustomer])
 
   useEffect(() => {
     if (earnings) {
@@ -389,7 +457,14 @@ export const DriverDashboard = () => {
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-gray-600">Müsait</span>
                       <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked={me.available} onChange={(e) => setAvailable(e.target.checked)} className="sr-only peer" />
+                        <input type="checkbox" checked={me.available} onChange={(e) => {
+                          const next = e.target.checked
+                          if (next && (!me.location || (me.location.lat === 0 && me.location.lng === 0))) {
+                            toast.error('Müsait duruma geçmek için önce konum seçin')
+                            return
+                          }
+                          setAvailable(next)
+                        }} className="sr-only peer" />
                         <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                       </label>
                     </div>
@@ -401,10 +476,10 @@ export const DriverDashboard = () => {
                       </div>
                     )}
                     <OpenStreetMap
-                        center={me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : { lat: 39.9334, lng: 32.8597 }}
-                        customerLocation={me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : { lat: 39.9334, lng: 32.8597 }}
-                        destination={selectedRequest ? selectedRequest.pickup : undefined}
-                        drivers={[{ id: me.id, name: me.name, location: me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : { lat: 39.9334, lng: 32.8597 }, rating: 0, available: me.available }]}
+                        center={me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : DEFAULT_CENTER}
+                        customerLocation={customerLiveLocation || (me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : DEFAULT_CENTER)}
+                        destination={activeBooking ? (activeBooking.status === 'in_progress' ? activeBooking.dropoffLocation : activeBooking.pickupLocation) : (selectedRequest ? selectedRequest.pickup : undefined)}
+                        drivers={[{ id: me.id, name: me.name, location: me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : DEFAULT_CENTER, rating: 0, available: me.available }]}
                         highlightDriverId={me.id}
                         onMapClick={(loc) => updateLocation(loc)}
                         path={activeBooking ? (useBookingStore.getState().routePoints || []) : []}
@@ -414,10 +489,71 @@ export const DriverDashboard = () => {
                     <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                       <h3 className="font-semibold text-blue-900 mb-2">Aktif Rezervasyon</h3>
                       <p className="text-sm text-blue-800">{activeBooking.pickupLocation?.address} → {activeBooking.dropoffLocation?.address}</p>
+                      <div className="mt-1 text-xs text-blue-700">
+                        {typeof metersToPickup === 'number' ? `Alış noktasına: ${Math.round(metersToPickup)} m` : ''}
+                        {typeof metersToDropoff === 'number' ? ` • Varış noktasına: ${Math.round(metersToDropoff)} m` : ''}
+                      </div>
+                      <div className="mt-2 text-xs text-blue-800">
+                        {(() => {
+                          const cur = (activeBooking as any)?.extras?.pricing?.currency || 'EUR'
+                          const sym = currencySymbol(cur)
+                          const driverFare = Number(activeBooking.basePrice || 0)
+                          const total = Number(activeBooking.finalPrice ?? activeBooking.basePrice ?? 0)
+                          const fee = Math.max(0, total - driverFare)
+                          return `Müşteri: ${sym}${total.toFixed(2)} • Sizin kazanç: ${sym}${driverFare.toFixed(2)} • Bizim pay: ${sym}${fee.toFixed(2)}`
+                        })()}
+                      </div>
                       <div className="flex gap-2 mt-3">
-                        <Button size="sm" variant="outline" onClick={() => updateBookingStatus(activeBooking.id, 'driver_en_route')}>Yola Çık</Button>
-                        <Button size="sm" onClick={() => confirmPickup(activeBooking.id)}>Müşteriyi Aldım</Button>
-                        <Button size="sm" variant="outline" onClick={async () => { await stopRouteRecordingAndSave(activeBooking.id); await updateBookingStatus(activeBooking.id, 'completed'); toast.success('Yolculuk tamamlandı') }}>Tamamla</Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={activeBooking.status !== 'accepted'}
+                          onClick={() => updateBookingStatus(activeBooking.id, 'driver_en_route')}
+                        >
+                          Yola Çık
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={activeBooking.status !== 'driver_en_route'}
+                          onClick={async () => {
+                            if (typeof metersToPickup === 'number' && metersToPickup > 150) {
+                              toast.error('Alış noktasına yaklaşınca “Geldim” yapın')
+                              return
+                            }
+                            await updateBookingStatus(activeBooking.id, 'driver_arrived')
+                          }}
+                        >
+                          Geldim
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={!(activeBooking.status === 'driver_arrived' || (activeBooking.status === 'driver_en_route' && typeof metersToPickup === 'number' && metersToPickup <= 150))}
+                          onClick={async () => {
+                            if (activeBooking.status !== 'driver_arrived') {
+                              await updateBookingStatus(activeBooking.id, 'driver_arrived')
+                            }
+                            await confirmPickup(activeBooking.id)
+                            toast.success('Yolculuk başladı')
+                          }}
+                        >
+                          Müşteriyi Aldım
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!(activeBooking.status === 'in_progress' && typeof metersToDropoff === 'number' && metersToDropoff <= 200)}
+                          onClick={async () => {
+                            try {
+                              await stopRouteRecordingAndSave(activeBooking.id)
+                            } catch {}
+                            await updateBookingStatus(activeBooking.id, 'completed')
+                            try { await setAvailable(true) } catch {}
+                            toast.success('Yolculuk tamamlandı')
+                          }}
+                        >
+                          Yolculuğu Tamamla
+                        </Button>
                       </div>
                     </div>
                   )}

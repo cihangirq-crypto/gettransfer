@@ -11,6 +11,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { MapPin, Users, Car, Navigation, Clock } from 'lucide-react';
 import { API } from '@/utils/api'
 import { toast } from 'sonner';
+import { useI18n } from '@/i18n';
+import { computeTripPricing, currencySymbol, type PricingConfig } from '@/utils/pricing'
 
 interface ImmediateRideForm {
   destinationAddress: string;
@@ -22,6 +24,7 @@ interface ImmediateRideForm {
 export const ImmediateRideRequest: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { lang } = useI18n();
   const { searchDrivers, availableDrivers, startRealTimeUpdates, stopRealTimeUpdates, refreshApprovedDriversNear } = useBookingStore();
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [destinationLocation, setDestinationLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -30,6 +33,8 @@ export const ImmediateRideRequest: React.FC = () => {
   const [estimatedPrice, setEstimatedPrice] = useState<number>(0);
   const [estimatedDistance, setEstimatedDistance] = useState<number>(0);
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
+  const [pricing, setPricing] = useState<PricingConfig>({ driverPerKm: 1, platformFeePercent: 3, currency: 'EUR' })
+  const [pricingBreakdown, setPricingBreakdown] = useState<{ driverFare: number, platformFee: number, total: number, customerPerKm: number } | null>(null)
 
   const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm<ImmediateRideForm>();
   const destinationAddress = watch('destinationAddress');
@@ -86,7 +91,7 @@ export const ImmediateRideRequest: React.FC = () => {
   const getAddressFromCoords = async (lat: number, lng: number) => {
     try {
       const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
-      const res = await fetch(url, { headers: { 'User-Agent': 'gettransfer-app/1.0' } });
+      const res = await fetch(url, { headers: { 'User-Agent': 'gettransfer-app/1.0', 'Accept-Language': lang } });
       if (!res.ok) throw new Error('reverse geocoding failed');
       const data = await res.json();
       const addr = data?.display_name || 'Mevcut Konum';
@@ -111,7 +116,9 @@ export const ImmediateRideRequest: React.FC = () => {
     const distance = R * c;
     
     setEstimatedDistance(Math.round(distance * 10) / 10);
-    setEstimatedPrice(Math.round(distance * 1 * 100) / 100); // 1€ per km
+    const breakdown = computeTripPricing(distance, pricing)
+    setPricingBreakdown({ driverFare: breakdown.driverFare, platformFee: breakdown.platformFee, total: breakdown.total, customerPerKm: breakdown.customerPerKm })
+    setEstimatedPrice(breakdown.total)
     setEstimatedTime(Math.round(distance * 2)); // 2 minutes per km
   };
 
@@ -119,7 +126,7 @@ export const ImmediateRideRequest: React.FC = () => {
   const getDestinationCoords = async (address: string) => {
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&namedetails=1&extratags=1&limit=10&q=${encodeURIComponent(address)}`;
-      const res = await fetch(url, { headers: { 'User-Agent': 'gettransfer-app/1.0' } });
+      const res = await fetch(url, { headers: { 'User-Agent': 'gettransfer-app/1.0', 'Accept-Language': lang } });
       if (!res.ok) throw new Error('geocoding failed');
       const items = await res.json();
       if (Array.isArray(items) && items.length > 0) {
@@ -144,7 +151,7 @@ export const ImmediateRideRequest: React.FC = () => {
       const params = new URLSearchParams({ q });
       if (currentLocation) { params.set('lat', String(currentLocation.lat)); params.set('lng', String(currentLocation.lng)); }
       try {
-        const res = await fetch(`${API}/places/search?${params.toString()}`);
+        const res = await fetch(`${API}/places/search?${params.toString()}`, { headers: { 'Accept-Language': lang } });
         if (res.ok) {
           const data = await res.json();
           const list = Array.isArray(data?.data) ? data.data as Array<{label:string;lat:number;lng:number;category:'airport'|'address'}> : [];
@@ -167,7 +174,7 @@ export const ImmediateRideRequest: React.FC = () => {
           bbox = `&viewbox=${left},${top},${right},${bottom}&bounded=1`;
         }
         const base = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&namedetails=1&extratags=1&limit=10${bbox}&q=${encodeURIComponent(q)}`;
-        const direct = await fetch(base, { headers: { 'User-Agent': 'gettransfer-app/1.0', 'Accept-Language': 'tr' } });
+        const direct = await fetch(base, { headers: { 'User-Agent': 'gettransfer-app/1.0', 'Accept-Language': lang } });
         if (direct.ok) {
           const arr = await direct.json();
           const mapped = (Array.isArray(arr) ? arr : []).map((it: any) => {
@@ -189,16 +196,41 @@ export const ImmediateRideRequest: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [destinationAddress, currentLocation]);
 
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const res = await fetch('/api/pricing')
+        const j = await res.json()
+        if (res.ok && j.success && j.data && alive) setPricing(j.data as PricingConfig)
+      } catch {}
+    })()
+    return () => { alive = false }
+  }, [])
+
   // Search for nearby drivers
   const searchNearbyDrivers = async () => {
-    if (currentLocation) {
-      await searchDrivers(
-        { lat: currentLocation.lat, lng: currentLocation.lng, address: 'Mevcut Konum' },
-        { lat: destinationLocation?.lat || 0, lng: destinationLocation?.lng || 0, address: destinationAddress },
-        { vehicleType: watch('vehicleType'), passengerCount: watch('passengerCount') }
-      );
-    }
+    if (!currentLocation) return
+    if (!destinationLocation) return
+    const destAddr = (destinationAddress || '').trim()
+    if (!destAddr) return
+    if (currentLocation && destinationLocation) calculateDistanceAndPrice(currentLocation, destinationLocation)
+    await searchDrivers(
+      { lat: currentLocation.lat, lng: currentLocation.lng, address: 'Mevcut Konum' },
+      { lat: destinationLocation.lat, lng: destinationLocation.lng, address: destAddr },
+      { vehicleType: watch('vehicleType'), passengerCount: watch('passengerCount') }
+    )
   };
+
+  useEffect(() => {
+    if (!currentLocation || !destinationLocation) return
+    const destAddr = (destinationAddress || '').trim()
+    if (!destAddr) return
+    const t = setTimeout(() => {
+      searchNearbyDrivers().catch(() => {})
+    }, 250)
+    return () => clearTimeout(t)
+  }, [currentLocation, destinationLocation, destinationAddress, watch('vehicleType'), watch('passengerCount')])
 
   // Handle form submission
   const onSubmit = async (data: ImmediateRideForm) => {
@@ -235,17 +267,11 @@ export const ImmediateRideRequest: React.FC = () => {
         estimatedDistance,
         estimatedTime,
         isImmediate: true,
+        basePrice: pricingBreakdown?.driverFare || 0,
+        finalPrice: pricingBreakdown?.total || 0,
+        extras: { termsAccepted: true, pricing: { driverPerKm: pricing.driverPerKm, platformFeePercent: pricing.platformFeePercent, distanceKm: estimatedDistance, driverFare: pricingBreakdown?.driverFare, platformFee: pricingBreakdown?.platformFee, total: pricingBreakdown?.total, currency: pricing.currency } }
       };
-      try {
-        const res = await fetch(`${API}/bookings/create`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...bookingData, customerId: user?.id, basePrice: estimatedPrice }) });
-        const j = await res.json();
-        if (res.ok && j.success) {
-          localStorage.setItem('pendingBooking', JSON.stringify({ id: j.data.id, booking: bookingData }));
-          toast.success('Talebiniz oluşturuldu');
-        }
-      } catch {}
       navigate('/select-driver', { state: bookingData });
-      // Demo simülasyonları kaldırıldı
     } catch (error) {
       toast.error('Rezervasyon oluşturulamadı');
     }
@@ -259,6 +285,11 @@ export const ImmediateRideRequest: React.FC = () => {
       const saved = localStorage.getItem('pendingBooking');
       if (saved) {
         const parsed = JSON.parse(saved);
+        const createdAt = typeof parsed?.createdAt === 'number' ? parsed.createdAt : null
+        if (createdAt && Date.now() - createdAt > 30 * 60 * 1000) {
+          localStorage.removeItem('pendingBooking')
+          return
+        }
         const b = parsed?.booking;
         if (b?.pickupLocation && b?.dropoffLocation) {
           setCurrentLocation({ lat: b.pickupLocation.lat, lng: b.pickupLocation.lng });
@@ -273,8 +304,6 @@ export const ImmediateRideRequest: React.FC = () => {
 
   const handleLocationDetected = (location: { lat: number; lng: number }) => {
     setCurrentLocation(location);
-    // Konum bulunduğunda yakındaki sürücüleri ara
-    searchNearbyDrivers();
     // Demo seed kaldırıldı
     refreshApprovedDriversNear(location);
     startRealTimeUpdates();
@@ -449,8 +478,8 @@ export const ImmediateRideRequest: React.FC = () => {
                   <h3 className="text-sm font-medium text-blue-900 mb-3">Tahmini Bilgiler</h3>
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
-                      <p className="text-2xl font-bold text-blue-600">€{estimatedPrice}</p>
-                      <p className="text-xs text-blue-700">Tutar (1€/km)</p>
+                      <p className="text-2xl font-bold text-blue-600">{currencySymbol(pricing.currency)}{Number(estimatedPrice || 0).toFixed(2)}</p>
+                      <p className="text-xs text-blue-700">Toplam</p>
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-blue-600">{estimatedDistance} km</p>
@@ -461,6 +490,13 @@ export const ImmediateRideRequest: React.FC = () => {
                       <p className="text-xs text-blue-700">Süre</p>
                     </div>
                   </div>
+                  {pricingBreakdown && (
+                    <div className="mt-3 text-xs text-blue-800 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div>Şoför: {currencySymbol(pricing.currency)}{pricingBreakdown.driverFare.toFixed(2)}</div>
+                      <div>Bizim pay (%{Number(pricing.platformFeePercent || 0).toFixed(2)}): {currencySymbol(pricing.currency)}{pricingBreakdown.platformFee.toFixed(2)}</div>
+                      <div>Km ücreti: {currencySymbol(pricing.currency)}{pricingBreakdown.customerPerKm.toFixed(2)}</div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -496,6 +532,14 @@ export const ImmediateRideRequest: React.FC = () => {
                 <Car className="h-5 w-5 mr-2" />
                 Hemen Araç Çağır
               </Button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Button type="button" variant="outline" onClick={() => navigate('/reserve')} className="w-full">
+                  Rezervasyon Yap
+                </Button>
+                <Button type="button" variant="outline" onClick={() => navigate('/reservations')} className="w-full">
+                  Rezervasyonlarım
+                </Button>
+              </div>
             </form>
           </div>
         </div>

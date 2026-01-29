@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { API } from '@/utils/api'
 import { io as ioClient, Socket } from 'socket.io-client'
 import { Booking, Driver, SearchFilters } from '@/types';
+import { useAuthStore } from '@/stores/authStore'
 
 interface BookingState {
   currentBooking: Booking | null;
@@ -52,9 +53,12 @@ export const useBookingStore = create<BookingState>()((set, get) => ({
     set({ isLoading: true, error: null });
     
     try {
+      const authUserId = useAuthStore.getState().user?.id
       const reqBody = {
         id: 'req_' + Date.now(),
-        customerId: 'cust_' + Date.now(),
+        customerId: authUserId || ('cust_' + Date.now()),
+        passengerCount: filters.passengerCount,
+        targetDriverId: filters.targetDriverId,
         pickup: { lat: pickup.lat, lng: pickup.lng, address: pickup.address || 'Alış Noktası' },
         dropoff: { lat: dropoff.lat, lng: dropoff.lng, address: dropoff.address || 'Varış Noktası' },
         vehicleType: filters.vehicleType || 'sedan'
@@ -203,23 +207,12 @@ export const useBookingStore = create<BookingState>()((set, get) => ({
     });
     s.on('booking:update', async (r: any) => {
       const { currentBooking } = get();
+      if (r && r.pickupLocation && r.dropoffLocation) {
+        set({ currentBooking: r as any })
+        return
+      }
       if (currentBooking && currentBooking.id === r.id) {
         set({ currentBooking: { ...currentBooking, status: r.status, driverId: r.driverId } as any });
-      } else if (r && r.status === 'accepted' && r.pickup && r.dropoff) {
-        try {
-          const payload = {
-            customerId: r.customerId,
-            driverId: r.driverId,
-            pickupLocation: { lat: r.pickup.lat, lng: r.pickup.lng, address: r.pickup.address },
-            dropoffLocation: { lat: r.dropoff.lat, lng: r.dropoff.lng, address: r.dropoff.address },
-            passengerCount: get().searchFilters.passengerCount || 1,
-            vehicleType: r.vehicleType,
-            status: 'accepted',
-            basePrice: 0
-          }
-          const created = await get().createBooking(payload)
-          set({ currentBooking: created })
-        } catch {}
       }
     });
     s.on('ride:cancelled', (_ev: any) => {
@@ -288,6 +281,14 @@ export const useBookingStore = create<BookingState>()((set, get) => ({
         .filter(d => !!d.currentLocation && d.isAvailable)
         .sort((a,b)=>calc(location,a.currentLocation!)-calc(location,b.currentLocation!))
       set({ availableDrivers: sorted, trackingLocation: location })
+      const { socket, updateInterval } = get()
+      if (socket && !updateInterval) {
+        const iv = setInterval(() => {
+          const loc = get().trackingLocation
+          if (loc) get().refreshApprovedDriversNear(loc)
+        }, 5000)
+        set({ updateInterval: iv as unknown as NodeJS.Timeout })
+      }
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'drivers_refresh_failed' })
     }

@@ -1,4 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
+import { logger } from '../utils/logger.js'
+
+const getEnv = (k: string) => {
+  const v = process.env[k]
+  return typeof v === 'string' && v.trim() ? v.trim() : null
+}
 
 type DriverSession = {
   id: string
@@ -21,9 +27,103 @@ type DriverSession = {
 
 let memory: Map<string, DriverSession> = new Map()
 
-const supabaseUrl = process.env.SUPABASE_URL || 'https://qbkccvujlewqiphkkdfa.supabase.co'
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+const supabaseUrl = getEnv('SUPABASE_URL')
+const supabaseKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('SUPABASE_ANON_KEY')
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } }) : null
+const DOCS_BUCKET = getEnv('SUPABASE_DOCS_BUCKET') || 'driver-docs'
+
+const isDataImageUrl = (u?: string) => typeof u === 'string' && u.startsWith('data:image/')
+const parseDataUrl = (u: string) => {
+  const m = /^data:([^;]+);base64,(.*)$/.exec(u)
+  if (!m) return null
+  return { mime: m[1], b64: m[2] }
+}
+const extFromMime = (mime: string) => {
+  const v = mime.toLowerCase()
+  if (v.includes('png')) return 'png'
+  if (v.includes('webp')) return 'webp'
+  return 'jpg'
+}
+
+async function ensureDocsBucket() {
+  if (!supabase) return
+  try {
+    const { data } = await (supabase.storage as any).getBucket(DOCS_BUCKET)
+    if (data?.name) return
+  } catch {}
+  try {
+    await (supabase.storage as any).createBucket(DOCS_BUCKET, { public: false })
+  } catch {}
+}
+
+async function maybeUploadDocs(d: DriverSession): Promise<DriverSession> {
+  if (!supabase) return d
+  if (!Array.isArray(d.docs) || d.docs.length === 0) return d
+
+  const hasData = d.docs.some(x => isDataImageUrl(x?.url))
+  if (!hasData) return d
+
+  await ensureDocsBucket()
+
+  const nextDocs: Array<{ name: string, url?: string }> = []
+  for (const item of d.docs) {
+    const name = String(item?.name || '').trim() || 'doc'
+    const url = typeof item?.url === 'string' ? item.url : undefined
+    if (!isDataImageUrl(url)) {
+      nextDocs.push({ name, url })
+      continue
+    }
+    const parsed = parseDataUrl(url)
+    if (!parsed) {
+      nextDocs.push({ name })
+      continue
+    }
+    const ext = extFromMime(parsed.mime)
+    const filePath = `drivers/${d.id}/${name}-${Date.now()}.${ext}`
+    try {
+      const bytes = Buffer.from(parsed.b64, 'base64')
+      const { error } = await (supabase.storage as any)
+        .from(DOCS_BUCKET)
+        .upload(filePath, bytes, { contentType: parsed.mime, upsert: true })
+      if (error) throw error
+      nextDocs.push({ name, url: `sb:${DOCS_BUCKET}/${filePath}` })
+    } catch (e: any) {
+      logger.warn('docs_upload_failed', { driverId: d.id, name, reason: String(e?.message || e || 'unknown') })
+      nextDocs.push({ name })
+    }
+  }
+  return { ...d, docs: nextDocs }
+}
+
+async function materializeDocUrls(docs?: Array<{ name: string, url?: string }>) {
+  if (!supabase) return docs
+  if (!Array.isArray(docs) || docs.length === 0) return docs
+  const out: Array<{ name: string, url?: string }> = []
+  for (const x of docs) {
+    const name = String(x?.name || '').trim() || 'doc'
+    const url = typeof x?.url === 'string' ? x.url : undefined
+    if (!url || !url.startsWith('sb:')) {
+      out.push({ name, url })
+      continue
+    }
+    const ref = url.slice(3)
+    const slash = ref.indexOf('/')
+    if (slash <= 0) {
+      out.push({ name })
+      continue
+    }
+    const bucket = ref.slice(0, slash)
+    const path = ref.slice(slash + 1)
+    try {
+      const { data, error } = await (supabase.storage as any).from(bucket).createSignedUrl(path, 10 * 60)
+      if (error) throw error
+      out.push({ name, url: data?.signedUrl })
+    } catch {
+      out.push({ name })
+    }
+  }
+  return out
+}
 
 async function sbUpsertDriver(d: DriverSession) {
   if (!supabase) return
@@ -51,8 +151,9 @@ async function sbUpsertDriver(d: DriverSession) {
 }
 
 export async function saveDriver(d: DriverSession) {
-  memory.set(d.id, d)
-  await sbUpsertDriver(d)
+  const next = await maybeUploadDocs(d)
+  memory.set(next.id, next)
+  await sbUpsertDriver(next)
 }
 
 export async function getDriver(id: string): Promise<DriverSession | null> {
@@ -70,7 +171,7 @@ export async function getDriver(id: string): Promise<DriverSession | null> {
         vehicleType: row.vehicle_type,
         vehicleModel: row.vehicle_model || undefined,
         licensePlate: row.license_plate || undefined,
-        docs: row.docs || undefined,
+        docs: await materializeDocUrls(row.docs || undefined),
         location: { lat: row.location_lat, lng: row.location_lng },
         available: !!row.available,
         approved: !!row.approved,
@@ -105,7 +206,7 @@ export async function getDriverByEmail(email: string): Promise<DriverSession | n
         vehicleType: row.vehicle_type,
         vehicleModel: row.vehicle_model || undefined,
         licensePlate: row.license_plate || undefined,
-        docs: row.docs || undefined,
+        docs: await materializeDocUrls(row.docs || undefined),
         location: { lat: row.location_lat, lng: row.location_lng },
         available: !!row.available,
         approved: !!row.approved,
@@ -129,7 +230,7 @@ export async function listDriversByStatus(status: 'approved' | 'pending' | 'reje
       const { data, error } = await q
       if (error) throw error
       const arr = Array.isArray(data) ? data : []
-      return arr.map((row: any) => ({
+      const mapped = arr.map((row: any) => ({
         id: row.id,
         name: row.name || 'Sürücü',
         email: row.email || undefined,
@@ -144,7 +245,13 @@ export async function listDriversByStatus(status: 'approved' | 'pending' | 'reje
         approved: !!row.approved,
         rejectedReason: row.rejected_reason || undefined,
       }))
-    } catch {
+      const out: DriverSession[] = []
+      for (const d of mapped) {
+        out.push({ ...d, docs: await materializeDocUrls(d.docs) })
+      }
+      return out
+    } catch (e: any) {
+      logger.warn('drivers_list_fallback', { status, reason: String(e?.message || e || 'unknown') })
       const fallback = Array.from(memory.values())
       if (fallback.length) return fallback
       return [
@@ -155,6 +262,7 @@ export async function listDriversByStatus(status: 'approved' | 'pending' | 'reje
   }
   let arr = Array.from(memory.values())
   if (arr.length === 0) {
+    logger.warn('drivers_list_fallback', { status, reason: 'memory_empty' })
     arr = [
       { id: 'drv_fatih', name: 'fatih', email: 'fatih@test.com', vehicleType: 'sedan', vehicleModel: 'Araç', licensePlate: '', docs: [{ name: 'license' }], location: { lat: 36.8969, lng: 30.7133 }, available: true, approved: true },
       { id: 'drv_vedat', name: 'vedat', email: 'vedat@test.com', vehicleType: 'sedan', vehicleModel: 'Araç', licensePlate: '', docs: [{ name: 'license' }], location: { lat: 36.8969, lng: 30.7133 }, available: true, approved: true },

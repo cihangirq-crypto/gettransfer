@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/authStore'
 import { useDriverStore } from '@/stores/driverStore'
 import { useNavigate } from 'react-router-dom'
+import { DEFAULT_CENTER } from '@/config/env'
 
 export const DriverApply: React.FC = () => {
   const [form, setForm] = useState({ name: '', email: '', password: '', vehicleType: 'sedan', vehicleModel: '', licensePlate: '', lat: 0, lng: 0 })
@@ -26,7 +27,7 @@ export const DriverApply: React.FC = () => {
           toast.error('Konum alınamadı, lütfen haritadan seçin')
           setLocating(false)
           // Fallback to default only if GPS fails
-          setForm(prev => ({ ...prev, lat: 39.9334, lng: 32.8597 })) // Ankara center fallback
+          setForm(prev => ({ ...prev, lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng }))
         },
         { enableHighAccuracy: true }
       )
@@ -109,7 +110,7 @@ export const DriverApply: React.FC = () => {
                 <span className="text-sm text-gray-600">Konum alınıyor...</span>
               </div>
             )}
-            <OpenStreetMap center={form.lat ? { lat: form.lat, lng: form.lng } : { lat: 39.9334, lng: 32.8597 }} customerLocation={form.lat ? { lat: form.lat, lng: form.lng } : { lat: 39.9334, lng: 32.8597 }} drivers={[]} onMapClick={(loc)=>setForm({...form,lat:loc.lat,lng:loc.lng})} />
+            <OpenStreetMap center={form.lat ? { lat: form.lat, lng: form.lng } : DEFAULT_CENTER} customerLocation={form.lat ? { lat: form.lat, lng: form.lng } : DEFAULT_CENTER} drivers={[]} onMapClick={(loc)=>setForm({...form,lat:loc.lat,lng:loc.lng})} />
           </div>
           <div className="flex justify-end">
             <Button onClick={submit} disabled={locating || !form.lat}>Başvuruyu Gönder</Button>

@@ -53,13 +53,40 @@ const MapController: React.FC<{ center: Location }> = ({ center }) => {
   }, [map]);
   
   useEffect(() => {
-    if (center && center.lat && center.lng && !dragging.current) {
+    if (center && Number.isFinite(center.lat) && Number.isFinite(center.lng) && !dragging.current) {
       map.panTo([center.lat, center.lng], { animate: true });
     }
   }, [center, map]);
   
   return null;
 };
+
+const ZoomControls: React.FC = () => {
+  const map = useMap()
+  return (
+    <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg">
+      <div className="flex flex-col">
+        <button
+          className="p-2 hover:bg-gray-100 transition-colors"
+          onClick={() => map.zoomIn()}
+          title="Yakınlaştır"
+          type="button"
+        >
+          +
+        </button>
+        <div className="border-t border-gray-200"></div>
+        <button
+          className="p-2 hover:bg-gray-100 transition-colors"
+          onClick={() => map.zoomOut()}
+          title="Uzaklaştır"
+          type="button"
+        >
+          -
+        </button>
+      </div>
+    </div>
+  )
+}
 
 const MapClick: React.FC<{ onMapClick?: (loc: Location) => void }> = ({ onMapClick }) => {
   useMapEvents({
@@ -112,6 +139,13 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
     iconAnchor: [8, 8]
   });
 
+  const highlightDriverIcon = L.divIcon({
+    html: `<div style="background-color: #2563eb; width: 18px; height: 18px; border-radius: 50%; border: 3px solid white; box-shadow: 0 3px 6px rgba(0,0,0,0.35);"></div>`,
+    className: 'driver-marker-highlight',
+    iconSize: [18, 18],
+    iconAnchor: [9, 9]
+  });
+
   const destinationIcon = L.divIcon({
     html: `<div style="background-color: #ef4444; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
     className: 'destination-marker',
@@ -134,6 +168,7 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
         
         <MapController center={center} />
         <MapClick onMapClick={onMapClick} />
+        <ZoomControls />
         
         {/* Customer Location Marker */}
         {customerLocation && (
@@ -175,7 +210,7 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
           <Marker
             key={driver.id}
             position={[driver.location.lat, driver.location.lng]}
-            icon={driverIcon}
+            icon={highlightDriverId === driver.id ? highlightDriverIcon : driverIcon}
             eventHandlers={{
               click: () => onDriverClick?.(driver)
             }}
@@ -242,26 +277,6 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
         )}
       </div>
       
-      {/* Zoom Controls */}
-      <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg">
-        <div className="flex flex-col">
-          <button
-            className="p-2 hover:bg-gray-100 transition-colors"
-            onClick={() => {}}
-            title="Yakınlaştır"
-          >
-            +
-          </button>
-          <div className="border-t border-gray-200"></div>
-          <button
-            className="p-2 hover:bg-gray-100 transition-colors"
-            onClick={() => {}}
-            title="Uzaklaştır"
-          >
-            -
-          </button>
-        </div>
-      </div>
     </div>
   );
 };

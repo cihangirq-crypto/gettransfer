@@ -2,6 +2,21 @@ import { create } from 'zustand'
 import { API } from '@/utils/api'
 import { io as ioClient, Socket } from 'socket.io-client'
 
+const haversineMeters = (a: { lat: number, lng: number }, b: { lat: number, lng: number }) => {
+  const R = 6371000
+  const dLat = (b.lat - a.lat) * Math.PI / 180
+  const dLng = (b.lng - a.lng) * Math.PI / 180
+  const la1 = a.lat * Math.PI / 180
+  const la2 = b.lat * Math.PI / 180
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(h))
+}
+
+let lastLocationSentAt = 0
+let lastLocationSent: { lat: number, lng: number } | null = null
+const MIN_LOCATION_SEND_INTERVAL_MS = 1000
+const MIN_LOCATION_SEND_DISTANCE_M = 10
+
 type DriverSession = {
   id: string
   name: string
@@ -70,6 +85,13 @@ export const useDriverStore = create<DriverState>()((set, get) => ({
     // Optimistic update
     set({ me: { ...me, location: loc } })
     try {
+      const now = Date.now()
+      if (lastLocationSent && now - lastLocationSentAt < MIN_LOCATION_SEND_INTERVAL_MS) {
+        const dist = haversineMeters(lastLocationSent, loc)
+        if (dist < MIN_LOCATION_SEND_DISTANCE_M) return
+      }
+      lastLocationSentAt = now
+      lastLocationSent = loc
       await fetch(`${API}/drivers/location`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: me.id, location: loc })
       })
@@ -82,6 +104,7 @@ export const useDriverStore = create<DriverState>()((set, get) => ({
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ driverId: me.id, requestId })
     })
     if (!res.ok) throw new Error('accept_failed')
+    set({ me: { ...me, available: false } })
   },
   setAvailable: async (available) => {
     const { me } = get()
@@ -146,6 +169,7 @@ export const useDriverStore = create<DriverState>()((set, get) => ({
     s.on('ride:request', (r: any) => {
       const { me } = get()
       if (me && r?.vehicleType === me?.vehicleType) {
+        if (r?.targetDriverId && String(r.targetDriverId) !== me.id) return
         const { requests } = get()
         const next = requests.some((x)=>x.id===r.id)
           ? requests

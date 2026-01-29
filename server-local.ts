@@ -12,6 +12,16 @@ const io = new SocketIOServer(httpServer, {
 ;(app as any).set('io', io)
 
 io.on('connection', (socket) => {
+  socket.on('booking:join', (payload: any) => {
+    const bookingId = String(payload?.bookingId || '').trim()
+    if (!bookingId) return
+    socket.join(`booking:${bookingId}`)
+  })
+  socket.on('booking:leave', (payload: any) => {
+    const bookingId = String(payload?.bookingId || '').trim()
+    if (!bookingId) return
+    socket.leave(`booking:${bookingId}`)
+  })
   socket.on('disconnect', () => {})
 })
 

@@ -9,6 +9,10 @@ import bookingsRoutes from './routes/bookings.js'
 import placesRoutes from './routes/places.js'
 import paymentsRoutes from './routes/payments.js'
 import customerRoutes from './routes/customer.js'
+import otpRoutes from './routes/otp.js'
+import adminRoutes from './routes/admin.js'
+import diagRoutes from './routes/diag.js'
+import pricingRoutes from './routes/pricing.js'
 import { config } from './config.js'
 import { requestId } from './middleware/requestId.js'
 import { logRequestStart, logRequestEnd, logger } from './utils/logger.js'
@@ -75,6 +79,10 @@ app.use('/api/bookings', bookingsRoutes)
 app.use('/api/places', placesRoutes)
 app.use('/api/payments', paymentsRoutes)
 app.use('/api/customer', customerRoutes)
+app.use('/api/otp', otpRoutes)
+app.use('/api/admin', adminRoutes)
+app.use('/api/diag', diagRoutes)
+app.use('/api/pricing', pricingRoutes)
 
 // Serve static files from dist
 const distPath = path.join(__dirname, '../dist')

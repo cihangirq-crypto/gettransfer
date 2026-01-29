@@ -2,6 +2,8 @@ import { Router, type Request, type Response } from 'express'
 import crypto from 'crypto'
 import { saveDriver, getDriver, listDriversByStatus, approveDriver, rejectDriver, updateDriverPartial, deleteDriver } from '../services/storage.js'
 import { diagnoseSupabase } from '../services/storage.js'
+import { createBooking, generateReservationCode, getBookingById, updateBooking } from '../services/bookingsStorage.js'
+import { getPricingConfig } from '../services/pricingStorage.js'
 
 const router = Router()
 
@@ -27,10 +29,13 @@ type DriverSession = {
 type RideRequest = {
   id: string
   customerId: string
+  passengerCount?: number
+  basePrice?: number
   pickup: { lat: number, lng: number, address: string }
   dropoff: { lat: number, lng: number, address: string }
   vehicleType: 'sedan' | 'suv' | 'van' | 'luxury'
   status: 'pending' | 'accepted' | 'cancelled'
+  targetDriverId?: string
   driverId?: string
 }
 
@@ -38,6 +43,10 @@ const drivers: Map<string, DriverSession> = new Map()
 const requests: Map<string, RideRequest> = new Map()
 const complaints: Array<{ id: string, driverId: string, text: string, createdAt: string }> = []
 const isValidLatLng = (p: any) => typeof p?.lat === 'number' && typeof p?.lng === 'number' && isFinite(p.lat) && isFinite(p.lng) && p.lat >= -90 && p.lat <= 90 && p.lng >= -180 && p.lng <= 180
+const liveLocationTs: Map<string, number> = new Map()
+const lastPersisted: Map<string, { ts: number, loc: { lat: number, lng: number } }> = new Map()
+const LOCATION_PERSIST_MIN_INTERVAL_MS = 30_000
+const LOCATION_PERSIST_MIN_DISTANCE_M = 100
 
 const haversine = (a: { lat: number, lng: number }, b: { lat: number, lng: number }) => {
   const R = 6371000
@@ -48,6 +57,8 @@ const haversine = (a: { lat: number, lng: number }, b: { lat: number, lng: numbe
   const h = Math.sin(dLat/2)**2 + Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)**2
   return 2 * R * Math.asin(Math.sqrt(h))
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100
 
 const bboxFilter = (center: { lat: number, lng: number }, radiusMeters: number) => {
   const dLat = (radiusMeters / 111320)
@@ -196,11 +207,25 @@ router.post('/location', (req: Request, res: Response) => {
     res.status(404).json({ success: false, error: 'driver_not_found' })
     return
   }
-  if (location && isValidLatLng(location)) d.location = location
+  const now = Date.now()
+  const hasLoc = location && isValidLatLng(location)
+  if (hasLoc) {
+    d.location = location
+    liveLocationTs.set(id, now)
+  }
   if (typeof available === 'boolean') d.available = available
   drivers.set(id, d)
   try { (req.app.get('io') as any)?.emit('driver:update', d) } catch {}
-  saveDriver(d).catch(()=>{})
+  if (hasLoc) {
+    const prev = lastPersisted.get(id)
+    const shouldPersist = !prev
+      || now - prev.ts >= LOCATION_PERSIST_MIN_INTERVAL_MS
+      || haversine(prev.loc, location) >= LOCATION_PERSIST_MIN_DISTANCE_M
+    if (shouldPersist) {
+      lastPersisted.set(id, { ts: now, loc: location })
+      saveDriver(d).catch(()=>{})
+    }
+  }
   res.json({ success: true })
 })
 
@@ -208,6 +233,10 @@ router.post('/status', (req: Request, res: Response) => {
   const { id, available } = req.body || {}
   const d = drivers.get(id)
   if (!d) { res.status(404).json({ success: false, error: 'driver_not_found' }); return }
+  if (!!available && (!d.location || (d.location.lat === 0 && d.location.lng === 0))) {
+    res.status(400).json({ success: false, error: 'location_required' })
+    return
+  }
   d.available = !!available
   drivers.set(id, d)
   saveDriver(d).catch(()=>{})
@@ -227,18 +256,29 @@ router.post('/profile', (req: Request, res: Response) => {
 })
 
 router.post('/request', async (req: Request, res: Response) => {
-  const { id, customerId, pickup, dropoff, vehicleType } = req.body || {}
+  const { id, customerId, passengerCount, basePrice, pickup, dropoff, vehicleType, targetDriverId } = req.body || {}
   if (!id || !customerId || !pickup || !dropoff || !vehicleType || !isValidLatLng(pickup) || !isValidLatLng(dropoff)) {
     res.status(400).json({ success: false, error: 'invalid_payload' })
     return
   }
-  const r: RideRequest = { id, customerId, pickup, dropoff, vehicleType, status: 'pending' }
+  const r: RideRequest = {
+    id,
+    customerId,
+    passengerCount: typeof passengerCount === 'number' && isFinite(passengerCount) ? Math.max(1, Math.floor(passengerCount)) : undefined,
+    basePrice: typeof basePrice === 'number' && isFinite(basePrice) ? basePrice : undefined,
+    pickup,
+    dropoff,
+    vehicleType,
+    status: 'pending',
+    targetDriverId: typeof targetDriverId === 'string' && targetDriverId.trim() ? targetDriverId.trim() : undefined,
+  }
   requests.set(id, r)
   const preFilter = bboxFilter(pickup, 3000)
   let pool: DriverSession[] = []
   try { pool = await listDriversByStatus('approved') } catch { pool = Array.from(drivers.values()).filter(d=>d.approved) }
   const candidates = pool.filter(d => d.available && d.vehicleType === vehicleType && preFilter(d.location))
-  const sorted = candidates.sort((a, b) => haversine(pickup, a.location) - haversine(pickup, b.location))
+  const targeted = r.targetDriverId ? candidates.filter(d => d.id === r.targetDriverId) : candidates
+  const sorted = targeted.sort((a, b) => haversine(pickup, a.location) - haversine(pickup, b.location))
   try { (req.app.get('io') as any)?.emit('ride:request', r) } catch {}
   res.json({ success: true, data: { request: r, candidates: sorted.slice(0, 10) } })
 })
@@ -256,14 +296,66 @@ router.post('/accept', (req: Request, res: Response) => {
     res.status(404).json({ success: false, error: 'request_not_found' })
     return
   }
-  r.status = 'accepted'
-  r.driverId = driverId
-  requests.set(requestId, r)
-  try {
-    (req.app.get('io') as any)?.emit('booking:update', r)
-    (req.app.get('io') as any)?.emit('ride:accepted', r)
-  } catch {}
-  res.json({ success: true, data: r })
+  if (r.targetDriverId && r.targetDriverId !== driverId) {
+    res.status(409).json({ success: false, error: 'not_target_driver' })
+    return
+  }
+  ;(async () => {
+    r.status = 'accepted'
+    r.driverId = driverId
+    requests.set(requestId, r)
+
+    const d = drivers.get(driverId)
+    if (d) {
+      d.available = false
+      drivers.set(driverId, d)
+      saveDriver(d).catch(() => {})
+      try { (req.app.get('io') as any)?.emit('driver:update', d) } catch {}
+    }
+
+    let booking = await getBookingById(r.id)
+    if (!booking) {
+      const now = new Date().toISOString()
+      const pricing = await getPricingConfig().catch(() => null)
+      const distKm = round2(haversine(r.pickup, r.dropoff) / 1000)
+      const driverPerKm = pricing?.driverPerKm ?? 1
+      const feePct = pricing?.platformFeePercent ?? 3
+      const driverFare = round2(distKm * driverPerKm)
+      const total = round2(driverFare * (1 + feePct / 100))
+      const reservationCode = await generateReservationCode()
+      booking = await createBooking({
+        id: r.id,
+        reservationCode,
+        customerId: r.customerId,
+        driverId,
+        pickupLocation: { lat: r.pickup.lat, lng: r.pickup.lng, address: r.pickup.address || 'Alış Noktası' },
+        dropoffLocation: { lat: r.dropoff.lat, lng: r.dropoff.lng, address: r.dropoff.address || 'Varış Noktası' },
+        pickupTime: now,
+        passengerCount: r.passengerCount || 1,
+        vehicleType: r.vehicleType,
+        status: 'accepted',
+        basePrice: driverFare,
+        finalPrice: total,
+        paymentStatus: 'unpaid',
+        paymentMethod: undefined,
+        paidAt: undefined,
+        route: undefined,
+        pickedUpAt: undefined,
+        completedAt: undefined,
+        extras: { pricing: { driverPerKm, platformFeePercent: feePct, distanceKm: distKm, driverFare, platformFee: round2(total - driverFare), total, currency: pricing?.currency || 'EUR' } },
+      } as any)
+    } else {
+      booking = await updateBooking(r.id, { status: 'accepted', driverId } as any)
+    }
+
+    try {
+      const io = (req.app.get('io') as any)
+      io?.emit('booking:update', booking)
+      io?.to?.(`booking:${booking.id}`)?.emit?.('booking:update', booking)
+      io?.emit('ride:accepted', r)
+    } catch {}
+    res.json({ success: true, data: booking })
+  })().catch(() => res.status(500).json({ success: false, error: 'accept_failed' }))
 })
 
 router.post('/cancel', (req: Request, res: Response) => {
@@ -288,7 +380,18 @@ router.get('/pending', (_req: Request, res: Response) => {
 router.get('/list', (req: Request, res: Response) => {
   const status = (req.query.status as string) || 'all'
   const st = status === 'approved' || status === 'pending' || status === 'rejected' ? status : 'all'
-  listDriversByStatus(st as any).then(list => res.json({ success: true, data: list })).catch(()=>res.json({ success: true, data: [] }))
+  listDriversByStatus(st as any).then(list => {
+    const now = Date.now()
+    const merged = list.map((row: any) => {
+      const mem = drivers.get(row.id)
+      const ts = liveLocationTs.get(row.id)
+      if (mem && ts && now - ts < 2 * 60_000) {
+        return { ...row, location: mem.location, available: mem.available }
+      }
+      return row
+    })
+    res.json({ success: true, data: merged })
+  }).catch(()=>res.json({ success: true, data: [] }))
 })
 
 router.get('/diag', async (_req: Request, res: Response) => {

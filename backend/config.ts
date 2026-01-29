@@ -12,9 +12,9 @@ function parseCorsOrigins(input: string | undefined): string[] {
 }
 
 export const config: AppConfig = {
-  nodeEnv: 'production',
-  port: 3005,
-  corsOrigins: [],
+  nodeEnv: (process.env.NODE_ENV === 'production' ? 'production' : (process.env.NODE_ENV === 'test' ? 'test' : 'development')),
+  port: Number(process.env.PORT || 3005),
+  corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
 }
 
 export function isProd() {

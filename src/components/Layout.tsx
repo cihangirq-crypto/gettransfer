@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/Button';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -12,7 +12,9 @@ import {
   X,
   LogOut,
   Settings,
-  History
+  History,
+  ChevronRight,
+  ArrowLeft
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -22,6 +24,7 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, logout } = useAuthStore();
   const location = useLocation();
+  const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const { t } = useI18n();
 
@@ -30,9 +33,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigation = [
     { name: t('nav.home'), href: '/', icon: Car },
     { name: t('nav.search'), href: '/search', icon: MapPin },
+    { name: 'Rezervasyon', href: '/reserve', icon: History },
+    { name: 'Site Haritası', href: '/sitemap', icon: Settings },
   ];
 
   const customerNavigation = [
+    { name: 'Rezervasyonlar', href: '/reservations', icon: History },
     { name: t('customer.reservations'), href: '/customer/dashboard', icon: History },
     { name: t('profile'), href: '/profile', icon: User },
   ];
@@ -45,6 +51,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const adminNavigation = [
     { name: 'Admin • Sürücüler', href: '/admin/drivers', icon: Settings },
+    { name: 'Admin • Fiyatlandırma', href: '/admin/pricing', icon: Settings },
     { name: t('profile'), href: '/profile', icon: User },
   ];
 
@@ -54,6 +61,41 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     if (user.role === 'driver') return driverNavigation;
     return customerNavigation;
   };
+
+  const crumbs = React.useMemo(() => {
+    const parts = location.pathname.split('/').filter(Boolean)
+    const map: Record<string, string> = {
+      admin: 'Yönetici',
+      drivers: 'Sürücüler',
+      pricing: 'Fiyatlandırma',
+      reserve: 'Rezervasyon',
+      reservations: 'Rezervasyonlarım',
+      search: 'Arama',
+      'search-results': 'Arama Sonuçları',
+      profile: 'Profil',
+      driver: 'Sürücü',
+      customer: 'Müşteri',
+      dashboard: 'Panel',
+      apply: 'Başvuru',
+      documents: 'Evraklar',
+      checkout: 'Ödeme',
+      tracking: 'Takip',
+      sitemap: 'Site Haritası',
+      login: 'Giriş',
+      register: 'Kayıt',
+      auth: 'Kimlik Doğrulama',
+      booking: 'Rezervasyon Detayı',
+      'realtime-tracking': 'Canlı Takip Demo',
+      'select-driver': 'Sürücü Seçimi',
+    }
+    const out: Array<{ label: string, href: string }> = []
+    let acc = ''
+    for (const p of parts) {
+      acc += `/${p}`
+      out.push({ label: map[p] || p, href: acc })
+    }
+    return out
+  }, [location.pathname])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -233,8 +275,34 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </div>
               )}
             </div>
-          )}
+        )}
         </nav>
+
+      <div className="bg-white border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="h-12 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-gray-600 overflow-hidden">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate(-1)}
+                className="text-gray-600 hover:text-gray-900"
+              >
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Geri
+              </Button>
+              <ChevronRight className="h-4 w-4 text-gray-300" />
+              <Link to="/" className="hover:text-gray-900 whitespace-nowrap">Ana Sayfa</Link>
+              {crumbs.map((c) => (
+                <span key={c.href} className="flex items-center min-w-0">
+                  <ChevronRight className="h-4 w-4 text-gray-300 mx-2 flex-shrink-0" />
+                  <Link to={c.href} className="hover:text-gray-900 truncate">{c.label}</Link>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Main Content */}
       <main className="flex-1">
