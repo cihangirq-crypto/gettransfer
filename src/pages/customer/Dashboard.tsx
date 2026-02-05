@@ -52,25 +52,42 @@ export const CustomerDashboard = () => {
     const loadData = async () => {
       if (user) {
         try {
-          const pr = await fetch(`${API}/customer/profile/${user.id}`)
-          const pd = await pr.json()
-          if (pd.success) setProfile(pd.data || { id: user.id, name: user.name, email: user.email, phone: user.phone })
-          
-          const pm = await fetch(`${API}/payments/${user.id}`)
-          const pmd = await pm.json()
-          if (pmd.success) setPayments(pmd.data || [])
-          
-          const bk = await fetch(`${API}/bookings/by-customer/${user.id}`)
-          const bkd = await bk.json()
-          if (bkd.success) {
-            setBookings(bkd.data || [])
-            const completed = bkd.data.filter((b:Booking) => b.status === 'completed').length
-            const cancelled = bkd.data.filter((b:Booking) => b.status === 'cancelled').length
-            const spent = bkd.data
-              .filter((b:Booking) => b.status === 'completed')
-              .reduce((sum:number, b:Booking) => sum + (b.finalPrice || b.basePrice || 0), 0)
-            setStats({ total: bkd.data.length, completed, cancelled, totalSpent: spent })
+          // Wrap calls in try-catch blocks individually to prevent one failure from breaking everything
+          try {
+            const pr = await fetch(`${API}/customer/profile/${user.id}`)
+            if (pr.ok) {
+              const pd = await pr.json()
+              if (pd.success) setProfile(pd.data || { id: user.id, name: user.name, email: user.email, phone: user.phone })
+            } else {
+              setProfile({ id: user.id, name: user.name, email: user.email, phone: user.phone })
+            }
+          } catch {
+             setProfile({ id: user.id, name: user.name, email: user.email, phone: user.phone })
           }
+          
+          try {
+            const pm = await fetch(`${API}/payments/${user.id}`)
+            if (pm.ok) {
+              const pmd = await pm.json()
+              if (pmd.success) setPayments(pmd.data || [])
+            }
+          } catch {}
+          
+          try {
+            const bk = await fetch(`${API}/bookings/by-customer/${user.id}`)
+            if (bk.ok) {
+              const bkd = await bk.json()
+              if (bkd.success && Array.isArray(bkd.data)) {
+                setBookings(bkd.data)
+                const completed = bkd.data.filter((b:Booking) => b.status === 'completed').length
+                const cancelled = bkd.data.filter((b:Booking) => b.status === 'cancelled').length
+                const spent = bkd.data
+                  .filter((b:Booking) => b.status === 'completed')
+                  .reduce((sum:number, b:Booking) => sum + (b.finalPrice || b.basePrice || 0), 0)
+                setStats({ total: bkd.data.length, completed, cancelled, totalSpent: spent })
+              }
+            }
+          } catch {}
         } catch {}
       }
     }
