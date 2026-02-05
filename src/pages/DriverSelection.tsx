@@ -73,13 +73,18 @@ export const DriverSelection: React.FC = () => {
         generateDriverOffers();
     } else {
         // If list becomes empty (e.g. driver went offline), clear offers
-        setOffers([]);
+        // BUT don't clear if we have an accepted offer pending redirect
+        setOffers(prev => prev.some(o => o.status === 'accepted') ? prev : []);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableDrivers]) // Removed .length to trigger on any change
 
   const generateDriverOffers = () => {
     if (!bookingData) return
+    
+    // Don't regenerate if we have an accepted offer waiting
+    if (offers.some(o => o.status === 'accepted')) return;
+
     const origin = bookingData.pickupLocation || { lat: bookingData.pickupLat, lng: bookingData.pickupLng }
     const calc = (a:{lat:number,lng:number}, b:{lat:number,lng:number}) => {
       const R=6371; const dLat=(b.lat-a.lat)*Math.PI/180; const dLng=(b.lng-a.lng)*Math.PI/180; const x=Math.sin(dLat/2)**2+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2; return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))
@@ -122,6 +127,9 @@ export const DriverSelection: React.FC = () => {
       setOffers(prev => prev.map(o => 
         o.id === offerId ? { ...o, status: 'accepted' } : { ...o, status: 'rejected' }
       ));
+      
+      // Force selected offer to stay visible even if driver disappears from 'availableDrivers' list
+      setSelectedOffer(offerId);
 
       const pick = bookingData.pickupLocation || { lat: bookingData.pickupLat, lng: bookingData.pickupLng, address: bookingData.pickupAddress || 'Alış Noktası' }
       const drop = bookingData.dropoffLocation || { lat: bookingData.dropoffLat, lng: bookingData.dropoffLng, address: bookingData.destinationAddress || 'Varış Noktası' }
@@ -204,7 +212,11 @@ export const DriverSelection: React.FC = () => {
               Sürücüler getiriliyor...
             </div>
           )}
-          {offers.map((offer) => (
+          {offers.map((offer) => {
+            // If we have a selected accepted offer, hide all others
+            if (selectedOffer && offer.id !== selectedOffer) return null;
+            
+            return (
             <div
               key={offer.id}
               className={`bg-white rounded-lg shadow-md p-6 border-2 transition-all ${
@@ -301,15 +313,18 @@ export const DriverSelection: React.FC = () => {
               )}
 
               {offer.status === 'accepted' && (
-                <div className="flex items-center justify-center text-green-600 font-medium">
-                  <Check className="h-5 w-5 mr-1" />
-                  Kabul Edildi - Yönlendiriliyorsunuz...
+                <div className="flex flex-col items-center justify-center text-green-600 font-medium py-4">
+                  <div className="flex items-center mb-2">
+                    <Check className="h-6 w-6 mr-2" />
+                    <span className="text-lg">Talep Gönderildi</span>
+                  </div>
+                  <p className="text-sm text-gray-600 animate-pulse">Sürücünün onayı bekleniyor...</p>
                 </div>
               )}
 
               
             </div>
-          ))}
+          )})}
         </div>
         
       </div>
