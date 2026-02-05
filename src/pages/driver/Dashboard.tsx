@@ -149,11 +149,12 @@ export const DriverDashboard = () => {
     const tick = async () => {
       if (!alive) return
       try { await refreshApproval() } catch {}
-      if (alive && approved !== true) setTimeout(tick, 5000)
+      // Always keep checking approval status periodically, not just when unapproved
+      if (alive) setTimeout(tick, 5000)
     }
-    setTimeout(tick, 5000)
+    setTimeout(tick, 1000)
     return () => { alive = false }
-  }, [me, approved])
+  }, [me]) // Removed 'approved' dependency to prevent loop/stale closure issues
 
   useEffect(() => {
     if (!activeBooking) return

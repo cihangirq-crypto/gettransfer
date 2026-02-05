@@ -118,13 +118,21 @@ export const useDriverStore = create<DriverState>()((set, get) => ({
   refreshApproval: async () => {
     const { me } = get()
     if (!me) return
-    const resApproved = await fetch(`${API}/drivers/list?status=approved`)
-    const resPending = await fetch(`${API}/drivers/list?status=pending`)
-    const a = await resApproved.json()
-    const p = await resPending.json()
-    const isApproved = Array.isArray(a.data) && !!a.data.find((d: any) => d.id === me.id)
-    const isPending = Array.isArray(p.data) && !!p.data.find((d: any) => d.id === me.id)
-    set({ approved: isApproved, rejectedReason: isApproved ? undefined : (isPending ? undefined : 'unspecified') })
+    try {
+        const resApproved = await fetch(`${API}/drivers/list?status=approved`)
+        const a = await resApproved.json()
+        const isApproved = Array.isArray(a.data) && !!a.data.find((d: any) => d.id === me.id)
+        
+        // If not approved, check if pending
+        let isPending = false
+        if (!isApproved) {
+            const resPending = await fetch(`${API}/drivers/list?status=pending`)
+            const p = await resPending.json()
+            isPending = Array.isArray(p.data) && !!p.data.find((d: any) => d.id === me.id)
+        }
+        
+        set({ approved: isApproved, rejectedReason: isApproved ? undefined : (isPending ? undefined : 'unspecified') })
+    } catch {}
   },
   fetchEarnings: async () => {
     const { me } = get()
