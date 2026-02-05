@@ -290,19 +290,27 @@ export const AdminDrivers: React.FC = () => {
                             </div>
                           )}
                         </div>
-
-                        {selectedDriver.location && activeBooking.pickupLocation && activeBooking.dropoffLocation && (
-                          <div className="h-56 rounded border overflow-hidden">
-                            <OpenStreetMap
-                              center={selectedDriver.location}
-                              customerLocation={customerLiveLocation || activeBooking.pickupLocation}
-                              destination={activeBooking.dropoffLocation}
-                              drivers={[{ id: selectedDriver.id, name: selectedDriver.name, location: selectedDriver.location, rating: 0, available: !!selectedDriver.available }]}
-                              highlightDriverId={selectedDriver.id}
-                            />
-                          </div>
-                        )}
                       </>
+                    )}
+
+                    {/* ALWAYS SHOW MAP if driver has location, even without active booking */}
+                    {selectedDriver.location && (
+                      <div className="h-64 w-full rounded border overflow-hidden relative z-0">
+                         <OpenStreetMap
+                            center={selectedDriver.location}
+                            // If no booking, just show driver location as 'customer' (center) and destination as same to render single marker
+                            customerLocation={activeBooking?.pickupLocation || selectedDriver.location}
+                            destination={activeBooking?.dropoffLocation || selectedDriver.location}
+                            drivers={[{ 
+                                id: selectedDriver.id, 
+                                name: selectedDriver.name, 
+                                location: selectedDriver.location, 
+                                rating: 0, 
+                                available: !!selectedDriver.available 
+                            }]}
+                            highlightDriverId={selectedDriver.id}
+                          />
+                      </div>
                     )}
                   </div>
                 )}
