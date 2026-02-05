@@ -68,9 +68,15 @@ export const DriverSelection: React.FC = () => {
 
   useEffect(() => {
     // Regenerate offers whenever nearby drivers list changes
-    generateDriverOffers();
+    // Check if we have drivers but no offers yet, OR if drivers count changed
+    if (availableDrivers.length > 0) {
+        generateDriverOffers();
+    } else {
+        // If list becomes empty (e.g. driver went offline), clear offers
+        setOffers([]);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availableDrivers.length])
+  }, [availableDrivers]) // Removed .length to trigger on any change
 
   const generateDriverOffers = () => {
     if (!bookingData) return
@@ -78,7 +84,12 @@ export const DriverSelection: React.FC = () => {
     const calc = (a:{lat:number,lng:number}, b:{lat:number,lng:number}) => {
       const R=6371; const dLat=(b.lat-a.lat)*Math.PI/180; const dLng=(b.lng-a.lng)*Math.PI/180; const x=Math.sin(dLat/2)**2+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2; return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))
     }
-    const realOffers: DriverOffer[] = availableDrivers.slice(0,10).map(d => {
+    
+    // Create offers only from AVAILABLE drivers
+    const realOffers: DriverOffer[] = availableDrivers
+      .filter(d => d.isAvailable) 
+      .slice(0,10)
+      .map(d => {
       const dist = d.currentLocation ? calc(origin, d.currentLocation) : 3
       const eta = Math.max(3, Math.round(dist*3))
       return {
@@ -97,11 +108,8 @@ export const DriverSelection: React.FC = () => {
         status: 'pending',
       }
     })
-    if (realOffers.length === 0) {
-      setOffers([])
-    } else {
-      setOffers(realOffers)
-    }
+    
+    setOffers(realOffers)
   };
 
   const handleAcceptOffer = async (offerId: string) => {
