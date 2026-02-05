@@ -104,6 +104,11 @@ router.post('/register', (req: Request, res: Response) => {
   res.json({ success: true, data: d })
 })
 
+router.post('/clean-stale-requests', (_req: Request, res: Response) => {
+    requests.clear()
+    res.json({ success: true, message: 'All stale requests cleared' })
+})
+
 router.post('/apply', (req: Request, res: Response) => {
   const { name, email, password, vehicleType, vehicleModel, licensePlate, docs, location } = req.body || {}
   if (!name || !email || typeof password !== 'string' || password.length < 6 || !vehicleType || !isValidLatLng(location || { lat: 36.8969, lng: 30.7133 })) {
@@ -279,7 +284,16 @@ router.post('/request', async (req: Request, res: Response) => {
   const candidates = pool.filter(d => d.available && d.vehicleType === vehicleType && preFilter(d.location))
   const targeted = r.targetDriverId ? candidates.filter(d => d.id === r.targetDriverId) : candidates
   const sorted = targeted.sort((a, b) => haversine(pickup, a.location) - haversine(pickup, b.location))
-  try { (req.app.get('io') as any)?.emit('ride:request', r) } catch {}
+  try { 
+      const io = req.app.get('io') as any
+      // Broadcast to ALL drivers initially, client side filters if it is relevant
+      io?.emit('ride:request', r) 
+      
+      // Also send specifically to target driver if exists
+      if (r.targetDriverId) {
+         io?.emit(`driver:${r.targetDriverId}:request`, r)
+      }
+  } catch {}
   res.json({ success: true, data: { request: r, candidates: sorted.slice(0, 10) } })
 })
 
@@ -352,7 +366,12 @@ router.post('/accept', (req: Request, res: Response) => {
       const io = (req.app.get('io') as any)
       io?.emit('booking:update', booking)
       io?.to?.(`booking:${booking.id}`)?.emit?.('booking:update', booking)
-      io?.emit('ride:accepted', r)
+      
+      // Notify everyone that this request is TAKEN so they can remove it from list
+      io?.emit('ride:taken', { requestId: r.id, driverId })
+      
+      // Also explicitly tell the driver who took it
+      io?.emit(`driver:${driverId}:assigned`, booking)
     } catch {}
     res.json({ success: true, data: booking })
   })().catch(() => res.status(500).json({ success: false, error: 'accept_failed' }))

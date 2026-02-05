@@ -208,15 +208,23 @@ export const DriverDashboard = () => {
         const res = await fetch(`/api/bookings/by-driver/${me.id}`)
         const j = await res.json()
         if (res.ok && j.success && Array.isArray(j.data)) {
-          const active = (j.data as import('@/types').Booking[]).find(b => b.status !== 'completed' && b.status !== 'cancelled') || null
-          setActiveBooking(active || null)
+          // Find any active booking (accepted, en_route, arrived, in_progress)
+          // Filter out completed/cancelled
+          const active = (j.data as import('@/types').Booking[]).find(b => 
+            ['accepted', 'driver_en_route', 'driver_arrived', 'in_progress'].includes(b.status)
+          ) || null
+          
+          // Only update if ID changed or status changed to avoid re-renders
+          if (active?.id !== activeBooking?.id || active?.status !== activeBooking?.status) {
+             setActiveBooking(active || null)
+          }
         }
       } catch {}
     }
     poll()
-    const iv = setInterval(poll, 5000)
+    const iv = setInterval(poll, 3000) // Poll more frequently for faster sync
     return () => clearInterval(iv)
-  }, [me?.id])
+  }, [me?.id, activeBooking?.id, activeBooking?.status])
 
   // Audio for notifications
   const notificationAudio = useRef<HTMLAudioElement | null>(null)

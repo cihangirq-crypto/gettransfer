@@ -186,6 +186,11 @@ export const useDriverStore = create<DriverState>()((set, get) => ({
         set({ requests: dedup as any })
       }
     })
+    s.on('ride:taken', (payload: any) => {
+      const { requests } = get()
+      // If someone else took the ride, remove it from my list immediately
+      set({ requests: requests.filter((x)=>x.id !== payload.requestId) })
+    })
     s.on('ride:accepted', (r: any) => {
       const { requests } = get()
       set({ requests: requests.filter((x)=>x.id!==r.id) })
