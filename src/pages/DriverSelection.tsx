@@ -133,10 +133,21 @@ export const DriverSelection: React.FC = () => {
 
       const pick = bookingData.pickupLocation || { lat: bookingData.pickupLat, lng: bookingData.pickupLng, address: bookingData.pickupAddress || 'Alış Noktası' }
       const drop = bookingData.dropoffLocation || { lat: bookingData.dropoffLat, lng: bookingData.dropoffLng, address: bookingData.destinationAddress || 'Varış Noktası' }
+      
+      // We are just SENDING the request here, not creating a booking yet.
+      // The booking is created on server when driver accepts.
+      // But we need to listen for 'booking:update' via socket to know when it is accepted.
+      
       await searchDrivers(pick, drop, { vehicleType: bookingData.vehicleType || 'sedan', passengerCount: bookingData.passengerCount || 1, targetDriverId: offer.driverId })
+      
       toast.success(`Çağrı gönderildi. ${offer.driverName} kabul edince takip başlayacak.`)
     } catch (error) {
-      toast.error('Çağrı gönderilemedi');
+      // Revert UI if API fails
+      setOffers(prev => prev.map(o => 
+        o.id === offerId ? { ...o, status: 'pending' } : o
+      ));
+      setSelectedOffer(null);
+      toast.error('Çağrı gönderilemedi. Lütfen tekrar deneyin.');
     } finally {
       setIsLoading(false);
     }

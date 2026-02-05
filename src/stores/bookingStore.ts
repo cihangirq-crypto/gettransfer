@@ -207,6 +207,14 @@ export const useBookingStore = create<BookingState>()((set, get) => ({
     });
     s.on('booking:update', async (r: any) => {
       const { currentBooking } = get();
+      
+      // If we receive a full booking object with status 'accepted' (or later), update state
+      // This is crucial for redirecting the customer from DriverSelection page
+      if (r && r.status && ['accepted', 'driver_en_route', 'driver_arrived', 'in_progress'].includes(r.status)) {
+         set({ currentBooking: r as any });
+         return;
+      }
+
       if (r && r.pickupLocation && r.dropoffLocation) {
         set({ currentBooking: r as any })
         return
