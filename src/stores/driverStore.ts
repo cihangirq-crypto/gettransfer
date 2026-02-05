@@ -162,26 +162,40 @@ export const useDriverStore = create<DriverState>()((set, get) => ({
   },
   startRealtime: () => {
     const { socket, me } = get()
-    if (socket) return
-    const origin = (import.meta.env.VITE_API_ORIGIN as string) || `http://${window.location.hostname}:3005`
-    const s = ioClient(origin, { transports: ['websocket'], reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 1000 })
+    if (socket) {
+        // Ensure we don't attach listeners multiple times if socket exists but re-connecting logic runs
+        socket.off('ride:request')
+        socket.off('ride:taken')
+        socket.off('ride:accepted')
+        socket.off('ride:cancelled')
+        // Re-attach fresh listeners below
+    }
     
-    s.on('connect', () => {
-      set({ isConnected: true })
-      get().refreshRequests()
-    })
-    s.on('disconnect', () => {
-      set({ isConnected: false })
-    })
+    const origin = (import.meta.env.VITE_API_ORIGIN as string) || `http://${window.location.hostname}:3005`
+    const s = socket || ioClient(origin, { transports: ['websocket'], reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 1000 })
+    
+    if (!socket) {
+        s.on('connect', () => {
+          set({ isConnected: true })
+          get().refreshRequests()
+        })
+        s.on('disconnect', () => {
+          set({ isConnected: false })
+        })
+    }
 
     s.on('ride:request', (r: any) => {
       const { me } = get()
       if (me && r?.vehicleType === me?.vehicleType) {
         if (r?.targetDriverId && String(r.targetDriverId) !== me.id) return
         const { requests } = get()
-        const next = requests.some((x)=>x.id===r.id)
-          ? requests
-          : [...requests, { id: r.id, customerId: r.customerId, pickup: r.pickup, dropoff: r.dropoff, vehicleType: r.vehicleType }]
+        
+        // Fix: Duplicate requests logic
+        // Check if we already have this request ID OR a request from this customer
+        const exists = requests.some((x) => x.id === r.id || x.customerId === r.customerId)
+        if (exists) return
+
+        const next = [...requests, { id: r.id, customerId: r.customerId, pickup: r.pickup, dropoff: r.dropoff, vehicleType: r.vehicleType }]
         const dedup = Array.from(new Map<string, any>(next.map((x:any)=>[x.id,x])).values())
         set({ requests: dedup as any })
       }
