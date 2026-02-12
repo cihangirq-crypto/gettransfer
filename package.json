@@ -13,6 +13,7 @@
     "check": "tsc --noEmit",
     "server:dev": "nodemon",
     "dev": "concurrently \"npm run client:dev\" \"npm run server:dev\"",
+    "deploy": "vercel --prod",
     "deploy:vercel": "vercel --prod --confirm"
   },
   "dependencies": {
@@ -49,6 +50,7 @@
     "@types/pg": "^8.15.5",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/react-leaflet": "^2.8.3",
     "@vercel/node": "^5.3.6",
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",

@@ -2,17 +2,17 @@ import React, { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+// import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+// import markerIcon from 'leaflet/dist/images/marker-icon.png';
+// import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 
 // Fix for default markers in Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
+/* L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
   iconUrl: markerIcon,
   shadowUrl: markerShadow,
-});
+}); */
 
 interface Location {
   lat: number;
@@ -41,6 +41,9 @@ interface OpenStreetMapProps {
   accuracy?: number | null;
   highlightDriverId?: string;
   path?: Location[];
+  pickupLocation?: Location;
+  dropoffLocation?: Location;
+  showRoute?: 'to_pickup' | 'to_dropoff' | 'both';
 }
 
 const MapController: React.FC<{ center: Location }> = ({ center }) => {
@@ -124,6 +127,9 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
   accuracy,
   highlightDriverId,
   path,
+  pickupLocation,
+  dropoffLocation,
+  showRoute,
 }) => {
   const customIcon = L.divIcon({
     html: `<div style="background-color: #3b82f6; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
@@ -151,6 +157,20 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
     className: 'destination-marker',
     iconSize: [20, 20],
     iconAnchor: [10, 10]
+  });
+
+  const pickupIcon = L.divIcon({
+    html: `<div style="background-color: #22c55e; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold;">P</div>`,
+    className: 'pickup-marker',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12]
+  });
+
+  const dropoffIcon = L.divIcon({
+    html: `<div style="background-color: #ef4444; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold;">D</div>`,
+    className: 'dropoff-marker',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12]
   });
 
   return (
@@ -247,6 +267,48 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
           if (!d) return null
           return <Polyline positions={[[d.location.lat, d.location.lng],[customerLocation.lat, customerLocation.lng]]} color="#2563eb" />
         })()}
+
+        {/* Pickup Marker */}
+        {pickupLocation && (
+          <Marker position={[pickupLocation.lat, pickupLocation.lng]} icon={pickupIcon}>
+            <Popup>
+              <div className="text-sm">
+                <strong className="text-green-600">📍 Alış Noktası (Pickup)</strong>
+                <br />
+                <span className="text-gray-600">
+                  {pickupLocation.lat.toFixed(6)}, {pickupLocation.lng.toFixed(6)}
+                </span>
+              </div>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* Dropoff Marker */}
+        {dropoffLocation && (
+          <Marker position={[dropoffLocation.lat, dropoffLocation.lng]} icon={dropoffIcon}>
+            <Popup>
+              <div className="text-sm">
+                <strong className="text-red-600">🎯 Varış Noktası (Dropoff)</strong>
+                <br />
+                <span className="text-gray-600">
+                  {dropoffLocation.lat.toFixed(6)}, {dropoffLocation.lng.toFixed(6)}
+                </span>
+              </div>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* Rota Çizimi - Şoförden pickup'a */}
+        {showRoute === 'to_pickup' && pickupLocation && highlightDriverId && (() => {
+          const d = drivers.find(x => x.id === highlightDriverId)
+          if (!d) return null
+          return <Polyline positions={[[d.location.lat, d.location.lng], [pickupLocation.lat, pickupLocation.lng]]} color="#22c55e" weight={4} opacity={0.8} />
+        })()}
+
+        {/* Rota Çizimi - Pickup'tan dropoff'a */}
+        {showRoute === 'to_dropoff' && pickupLocation && dropoffLocation && (
+          <Polyline positions={[[pickupLocation.lat, pickupLocation.lng], [dropoffLocation.lat, dropoffLocation.lng]]} color="#ef4444" weight={4} opacity={0.8} />
+        )}
 
         {/* Driver path polyline */}
         {Array.isArray(path) && path.length > 1 && (

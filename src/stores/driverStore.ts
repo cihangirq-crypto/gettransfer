@@ -190,9 +190,8 @@ export const useDriverStore = create<DriverState>()((set, get) => ({
         if (r?.targetDriverId && String(r.targetDriverId) !== me.id) return
         const { requests } = get()
         
-        // Fix: Duplicate requests logic
-        // Check if we already have this request ID OR a request from this customer
-        const exists = requests.some((x) => x.id === r.id || x.customerId === r.customerId)
+        // Check if we already have this request ID
+        const exists = requests.some((x) => x.id === r.id)
         if (exists) return
 
         const next = [...requests, { id: r.id, customerId: r.customerId, pickup: r.pickup, dropoff: r.dropoff, vehicleType: r.vehicleType }]
@@ -200,14 +199,28 @@ export const useDriverStore = create<DriverState>()((set, get) => ({
         set({ requests: dedup as any })
       }
     })
+    
+    // Driver-specific request event
+    s.on(`driver:${me?.id}:request`, (r: any) => {
+      if (!r) return
+      const { requests } = get()
+      const exists = requests.some((x) => x.id === r.id)
+      if (exists) return
+      set({ requests: [...requests, { id: r.id, customerId: r.customerId, pickup: r.pickup, dropoff: r.dropoff, vehicleType: r.vehicleType }] })
+    })
+    
+    // Driver assigned event
+    s.on(`driver:${me?.id}:assigned`, (booking: any) => {
+      if (!booking) return
+      // Remove from pending requests
+      const { requests } = get()
+      set({ requests: requests.filter((x) => x.id !== booking.id) })
+    })
+    
     s.on('ride:taken', (payload: any) => {
       const { requests } = get()
       // If someone else took the ride, remove it from my list immediately
       set({ requests: requests.filter((x)=>x.id !== payload.requestId) })
-    })
-    s.on('ride:accepted', (r: any) => {
-      const { requests } = get()
-      set({ requests: requests.filter((x)=>x.id!==r.id) })
     })
     s.on('ride:cancelled', (r: any) => {
       const { requests } = get()

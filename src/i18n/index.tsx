@@ -287,7 +287,7 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }>=({ children }
     if (!saved || saved === 'auto') return getDeviceLang()
     return normalize(saved)
   }
-  const [lang, setLangState] = React.useState<string>(detect())
+  const [lang, setLangState] = useState<string>(detect())
   const t = (k: string) => (dicts[lang]?.[k] ?? dicts['en']?.[k] ?? k)
   const setLangWrap = (l: string) => {
     const raw = String(l || '').toLowerCase()

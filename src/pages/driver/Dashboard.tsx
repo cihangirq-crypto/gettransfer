@@ -9,6 +9,7 @@ import { Car, User, MapPin, Star, TrendingUp, Clock, CheckCircle, Settings, Came
 import { toast } from 'sonner'
 import { DEFAULT_CENTER } from '@/config/env'
 import { currencySymbol } from '@/utils/pricing'
+import type { Booking } from '@/types'
 
 export const DriverDashboard = () => {
   const { me, requests, register, refreshRequests, accept, updateLocation, setAvailable, refreshApproval, earnings, fetchEarnings, submitComplaint, approved, updateProfile, isConnected } = useDriverStore()
@@ -27,7 +28,7 @@ export const DriverDashboard = () => {
   type RideRequest = { id: string; pickup: { lat:number, lng:number, address:string }; dropoff: { lat:number, lng:number, address:string }; vehicleType: 'sedan'|'suv'|'van'|'luxury' }
   const [selectedRequest, setSelectedRequest] = useState<RideRequest | null>(null)
   const [watchId, setWatchId] = useState<number | null>(null)
-  const [activeBooking, setActiveBooking] = useState<import('@/types').Booking | null>(null)
+  const [activeBooking, setActiveBooking] = useState<Booking | null>(null)
   const [customerLiveLocation, setCustomerLiveLocation] = useState<{ lat: number, lng: number } | null>(null)
   const [stats, setStats] = useState({ todayTrips: 0, weeklyTrips: 0, avgRating: 4.8, totalEarnings: 0 })
   const [installEvt, setInstallEvt] = useState<any>(null)
@@ -210,7 +211,7 @@ export const DriverDashboard = () => {
         if (res.ok && j.success && Array.isArray(j.data)) {
           // Find any active booking (accepted, en_route, arrived, in_progress)
           // Filter out completed/cancelled
-          const active = (j.data as import('@/types').Booking[]).find(b => 
+          const active = (j.data as Booking[]).find(b => 
             ['accepted', 'driver_en_route', 'driver_arrived', 'in_progress'].includes(b.status)
           ) || null
           
@@ -492,6 +493,9 @@ export const DriverDashboard = () => {
                         highlightDriverId={me.id}
                         onMapClick={(loc) => updateLocation(loc)}
                         path={activeBooking ? (useBookingStore.getState().routePoints || []) : []}
+                        pickupLocation={activeBooking?.pickupLocation}
+                        dropoffLocation={activeBooking?.dropoffLocation}
+                        showRoute={activeBooking ? (activeBooking.status === 'in_progress' ? 'to_dropoff' : 'to_pickup') : undefined}
                       />
                   </div>
                   {activeBooking && approved === true && (
@@ -512,14 +516,54 @@ export const DriverDashboard = () => {
                           return `Müşteri: ${sym}${total.toFixed(2)} • Sizin kazanç: ${sym}${driverFare.toFixed(2)} • Bizim pay: ${sym}${fee.toFixed(2)}`
                         })()}
                       </div>
-                      <div className="flex gap-2 mt-3">
+                      
+                      {/* Durum Göstergesi */}
+                      <div className="mt-3 p-2 rounded bg-white/70">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          {activeBooking.status === 'accepted' && (
+                            <span className="text-yellow-700">⏳ Müşteri bekleniyor - Yola çıkın</span>
+                          )}
+                          {activeBooking.status === 'driver_en_route' && (
+                            <span className="text-blue-700">🚗 Müşteriye doğru yola çıktınız</span>
+                          )}
+                          {activeBooking.status === 'driver_arrived' && (
+                            <span className="text-green-700">✅ Müşteri yanındasınız - Yolculuğu başlatın</span>
+                          )}
+                          {activeBooking.status === 'in_progress' && (
+                            <span className="text-purple-700">🚀 Yolculuk devam ediyor - Varış noktasına gidin</span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Yolculuk devam ederken navigasyon butonu */}
+                      {activeBooking.status === 'in_progress' && (
+                        <div className="mt-2">
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&origin=${me?.location?.lat},${me?.location?.lng}&destination=${activeBooking.dropoffLocation?.lat},${activeBooking.dropoffLocation?.lng}&travelmode=driving`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <Button size="sm" variant="outline">🗺️ Navigasyon</Button>
+                          </a>
+                          <span className="ml-2 text-xs text-gray-600">
+                            {typeof metersToDropoff === 'number' ? `${Math.round(metersToDropoff)} m kaldı` : ''}
+                          </span>
+                        </div>
+                      )}
+                      
+                      <div className="flex flex-wrap gap-2 mt-3">
                         <Button
                           size="sm"
                           variant="outline"
                           disabled={activeBooking.status !== 'accepted'}
-                          onClick={() => updateBookingStatus(activeBooking.id, 'driver_en_route')}
+                          onClick={async () => {
+                            await updateBookingStatus(activeBooking.id, 'driver_en_route')
+                            // Google Maps navigasyon aç
+                            const url = `https://www.google.com/maps/dir/?api=1&origin=${me?.location?.lat},${me?.location?.lng}&destination=${activeBooking.pickupLocation?.lat},${activeBooking.pickupLocation?.lng}&travelmode=driving`
+                            window.open(url, '_blank')
+                          }}
                         >
-                          Yola Çık
+                          🚗 Yola Çık & Navigasyon
                         </Button>
                         <Button
                           size="sm"
@@ -531,22 +575,23 @@ export const DriverDashboard = () => {
                               return
                             }
                             await updateBookingStatus(activeBooking.id, 'driver_arrived')
+                            toast.success('Müşteriye vardınız!')
                           }}
                         >
-                          Geldim
+                          ✅ Geldim
                         </Button>
                         <Button
                           size="sm"
-                          disabled={!(activeBooking.status === 'driver_arrived' || (activeBooking.status === 'driver_en_route' && typeof metersToPickup === 'number' && metersToPickup <= 150))}
+                          disabled={activeBooking.status !== 'driver_arrived'}
                           onClick={async () => {
-                            if (activeBooking.status !== 'driver_arrived') {
-                              await updateBookingStatus(activeBooking.id, 'driver_arrived')
-                            }
                             await confirmPickup(activeBooking.id)
-                            toast.success('Yolculuk başladı')
+                            toast.success('Yolculuk başladı! Varış noktasına gidin')
+                            // Google Maps navigasyon aç - dropoff'a
+                            const url = `https://www.google.com/maps/dir/?api=1&origin=${activeBooking.pickupLocation?.lat},${activeBooking.pickupLocation?.lng}&destination=${activeBooking.dropoffLocation?.lat},${activeBooking.dropoffLocation?.lng}&travelmode=driving`
+                            window.open(url, '_blank')
                           }}
                         >
-                          Müşteriyi Aldım
+                          🚀 Müşteriyi Aldım & Yola Çık
                         </Button>
                         <Button
                           size="sm"
@@ -558,10 +603,10 @@ export const DriverDashboard = () => {
                             } catch {}
                             await updateBookingStatus(activeBooking.id, 'completed')
                             try { await setAvailable(true) } catch {}
-                            toast.success('Yolculuk tamamlandı')
+                            toast.success('Yolculuk tamamlandı! Tebrikler 🎉')
                           }}
                         >
-                          Yolculuğu Tamamla
+                          ✅ Yolculuğu Tamamla
                         </Button>
                       </div>
                     </div>
