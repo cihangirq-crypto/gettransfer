@@ -9,7 +9,6 @@ import { Car, User, MapPin, Star, TrendingUp, Clock, CheckCircle, Settings, Came
 import { toast } from 'sonner'
 import { DEFAULT_CENTER } from '@/config/env'
 import { currencySymbol } from '@/utils/pricing'
-import type { Booking } from '@/types'
 
 export const DriverDashboard = () => {
   const { me, requests, register, refreshRequests, accept, updateLocation, setAvailable, refreshApproval, earnings, fetchEarnings, submitComplaint, approved, updateProfile, isConnected } = useDriverStore()
@@ -28,7 +27,7 @@ export const DriverDashboard = () => {
   type RideRequest = { id: string; pickup: { lat:number, lng:number, address:string }; dropoff: { lat:number, lng:number, address:string }; vehicleType: 'sedan'|'suv'|'van'|'luxury' }
   const [selectedRequest, setSelectedRequest] = useState<RideRequest | null>(null)
   const [watchId, setWatchId] = useState<number | null>(null)
-  const [activeBooking, setActiveBooking] = useState<Booking | null>(null)
+  const [activeBooking, setActiveBooking] = useState<import('@/types').Booking | null>(null)
   const [customerLiveLocation, setCustomerLiveLocation] = useState<{ lat: number, lng: number } | null>(null)
   const [stats, setStats] = useState({ todayTrips: 0, weeklyTrips: 0, avgRating: 4.8, totalEarnings: 0 })
   const [installEvt, setInstallEvt] = useState<any>(null)
@@ -211,7 +210,7 @@ export const DriverDashboard = () => {
         if (res.ok && j.success && Array.isArray(j.data)) {
           // Find any active booking (accepted, en_route, arrived, in_progress)
           // Filter out completed/cancelled
-          const active = (j.data as Booking[]).find(b => 
+          const active = (j.data as import('@/types').Booking[]).find(b => 
             ['accepted', 'driver_en_route', 'driver_arrived', 'in_progress'].includes(b.status)
           ) || null
           
