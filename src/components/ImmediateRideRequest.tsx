@@ -164,16 +164,8 @@ export const ImmediateRideRequest: React.FC = () => {
       } catch {}
 
       try {
-        let bbox = '';
-        if (currentLocation) {
-          const dLat = 0.35, dLng = 0.35;
-          const left = (currentLocation.lng - dLng).toFixed(6);
-          const right = (currentLocation.lng + dLng).toFixed(6);
-          const top = (currentLocation.lat + dLat).toFixed(6);
-          const bottom = (currentLocation.lat - dLat).toFixed(6);
-          bbox = `&viewbox=${left},${top},${right},${bottom}&bounded=1`;
-        }
-        const base = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&namedetails=1&extratags=1&limit=10${bbox}&q=${encodeURIComponent(q)}`;
+        // GLOBAL arama - bounded parametresi YOK
+        const base = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&namedetails=1&extratags=1&limit=15&q=${encodeURIComponent(q)}`;
         const direct = await fetch(base, { headers: { 'User-Agent': 'gettransfer-app/1.0', 'Accept-Language': lang } });
         if (direct.ok) {
           const arr = await direct.json();

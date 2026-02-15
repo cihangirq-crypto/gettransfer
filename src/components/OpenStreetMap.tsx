@@ -343,12 +343,7 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
           </Marker>
         ))}
 
-        {/* Route highlight from selected driver to customer */}
-        {highlightDriverId && customerLocation && (()=>{
-          const d = drivers.find(x=>x.id===highlightDriverId)
-          if (!d) return null
-          return <Polyline positions={[[d.location.lat, d.location.lng],[customerLocation.lat, customerLocation.lng]]} color="#2563eb" />
-        })()}
+        {/* Düz çizgi KALDIRILDI - artık sadece gerçek yol rotaları gösteriliyor */}
 
         {/* Pickup Marker */}
         {pickupLocation && (
