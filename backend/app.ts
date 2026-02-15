@@ -13,6 +13,7 @@ import otpRoutes from './routes/otp.js'
 import adminRoutes from './routes/admin.js'
 import diagRoutes from './routes/diag.js'
 import pricingRoutes from './routes/pricing.js'
+import mapsRoutes from './routes/maps.js'
 import { config } from './config.js'
 import { requestId } from './middleware/requestId.js'
 import { logRequestStart, logRequestEnd, logger } from './utils/logger.js'
@@ -83,6 +84,7 @@ app.use('/api/otp', otpRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/diag', diagRoutes)
 app.use('/api/pricing', pricingRoutes)
+app.use('/api/maps', mapsRoutes)
 
 // Serve static files from dist
 const distPath = path.join(__dirname, '../dist')
