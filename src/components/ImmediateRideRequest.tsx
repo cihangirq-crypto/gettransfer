@@ -41,9 +41,70 @@ export const ImmediateRideRequest: React.FC = () => {
   const [suggestions, setSuggestions] = useState<Array<{ label: string; lat: number; lng: number; category: 'airport'|'address' }>>([]);
   const [showSug, setShowSug] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
+  const [showRegisterTab, setShowRegisterTab] = useState(true);
   const [guestName, setGuestName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+
+  // Google ile giriş
+  const handleGoogleLogin = () => {
+    window.location.href = '/api/auth/google';
+  };
+
+  // Kayıt ol
+  const handleRegister = async () => {
+    try {
+      const payload = { 
+        name: guestName || 'Misafir', 
+        email: guestEmail || `guest_${Date.now()}@guest.local`, 
+        phone: guestPhone || '' 
+      };
+      const res = await fetch(`${API}/auth/register/customer`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload) 
+      });
+      const j = await res.json();
+      if (res.ok && j.success) {
+        toast.success('Kayıt başarılı! Hoş geldiniz.');
+        setShowRegister(false);
+        if (j.data?.token) {
+          useAuthStore.getState().setToken(j.data.token);
+        }
+        navigate(0);
+      } else {
+        toast.error(j.error || 'Kayıt başarısız');
+      }
+    } catch { 
+      toast.error('Kayıt hatası. Lütfen tekrar deneyin.'); 
+    }
+  };
+
+  // Giriş yap
+  const handleLogin = async () => {
+    try {
+      const res = await fetch(`${API}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword })
+      });
+      const j = await res.json();
+      if (res.ok && j.success) {
+        toast.success('Giriş başarılı! Hoş geldiniz.');
+        setShowRegister(false);
+        if (j.data?.token) {
+          useAuthStore.getState().setToken(j.data.token);
+        }
+        navigate(0);
+      } else {
+        toast.error(j.error || 'Giriş başarısız');
+      }
+    } catch {
+      toast.error('Giriş hatası. Lütfen tekrar deneyin.');
+    }
+  };
 
   // Get current location
   const getCurrentLocation = () => {
@@ -537,30 +598,81 @@ export const ImmediateRideRequest: React.FC = () => {
         </div>
       </div>
       {showRegister && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-30">
-          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">Hızlı Müşteri Kaydı</h3>
-            <div className="space-y-3">
-              <Input label="Ad Soyad" type="text" placeholder="Adınız" value={guestName} onChange={(e:any)=>setGuestName(e.target.value)} />
-              <Input label="E-posta" type="email" placeholder="ornek@eposta.com" value={guestEmail} onChange={(e:any)=>setGuestEmail(e.target.value)} />
-              <Input label="Telefon" type="tel" placeholder="05xx xxx xx xx" value={guestPhone} onChange={(e:any)=>setGuestPhone(e.target.value)} />
-              <div className="flex gap-2">
-                <Button className="flex-1" onClick={async ()=>{
-                  try {
-                    const payload = { name: guestName || 'Misafir', email: guestEmail || `guest_${Date.now()}@guest.local`, phone: guestPhone || '' };
-                    const res = await fetch(`${API}/auth/register/customer`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    const j = await res.json();
-                    if (res.ok && j.success) {
-                      toast.success('Müşteri kaydı oluşturuldu');
-                      setShowRegister(false);
-                      navigate(0);
-                    } else {
-                      toast.error('Kayıt başarısız');
-                    }
-                  } catch { toast.error('Kayıt hatası'); }
-                }}>Kaydı Tamamla</Button>
-                <Button variant="outline" onClick={()=>setShowRegister(false)}>Vazgeç</Button>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-30 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white text-center">
+              <h3 className="text-xl font-bold">Araç Çağırmak İçin Giriş Yapın</h3>
+              <p className="text-blue-100 text-sm mt-1">Hesabınızla giriş yapın veya kayıt olun</p>
+            </div>
+            
+            {/* Tabs */}
+            <div className="flex border-b">
+              <button
+                className={`flex-1 py-3 text-center font-medium transition-colors ${showRegisterTab ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-500 hover:text-gray-700'}`}
+                onClick={() => setShowRegisterTab(true)}
+              >
+                Kayıt Ol
+              </button>
+              <button
+                className={`flex-1 py-3 text-center font-medium transition-colors ${!showRegisterTab ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-500 hover:text-gray-700'}`}
+                onClick={() => setShowRegisterTab(false)}
+              >
+                Giriş Yap
+              </button>
+            </div>
+            
+            <div className="p-6">
+              {/* Google ile Giriş */}
+              <button
+                onClick={handleGoogleLogin}
+                className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 rounded-xl py-3 px-4 hover:bg-gray-50 hover:border-gray-300 transition-all mb-4"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                <span className="font-medium text-gray-700">Google ile Devam Et</span>
+              </button>
+              
+              <div className="relative mb-4">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-200"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-4 bg-white text-gray-500">veya</span>
+                </div>
               </div>
+              
+              {/* Kayıt Ol Formu */}
+              {showRegisterTab ? (
+                <div className="space-y-4">
+                  <Input label="Ad Soyad" type="text" placeholder="Adınız Soyadınız" value={guestName} onChange={(e:any)=>setGuestName(e.target.value)} />
+                  <Input label="E-posta" type="email" placeholder="ornek@eposta.com" value={guestEmail} onChange={(e:any)=>setGuestEmail(e.target.value)} />
+                  <Input label="Telefon" type="tel" placeholder="05xx xxx xx xx" value={guestPhone} onChange={(e:any)=>setGuestPhone(e.target.value)} />
+                  <Button className="w-full py-3" onClick={handleRegister}>
+                    Kaydı Tamamla
+                  </Button>
+                </div>
+              ) : (
+                /* Giriş Yap Formu */
+                <div className="space-y-4">
+                  <Input label="E-posta" type="email" placeholder="ornek@eposta.com" value={loginEmail} onChange={(e:any)=>setLoginEmail(e.target.value)} />
+                  <Input label="Şifre" type="password" placeholder="••••••••" value={loginPassword} onChange={(e:any)=>setLoginPassword(e.target.value)} />
+                  <Button className="w-full py-3" onClick={handleLogin}>
+                    Giriş Yap
+                  </Button>
+                  <p className="text-center text-sm text-gray-500">
+                    Şifrenizi unuttunuz? <a href="#" className="text-blue-600 hover:underline">Sıfırla</a>
+                  </p>
+                </div>
+              )}
+              
+              <Button variant="ghost" className="w-full mt-4" onClick={()=>setShowRegister(false)}>
+                İptal
+              </Button>
             </div>
           </div>
         </div>
