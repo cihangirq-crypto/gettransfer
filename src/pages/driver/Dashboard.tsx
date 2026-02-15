@@ -17,6 +17,7 @@ export const DriverDashboard = () => {
   
   const [form, setForm] = useState({ id: '', name: '', vehicleType: 'sedan', lat: 0, lng: 0 })
   const [locating, setLocating] = useState(true)
+  const [locationSource, setLocationSource] = useState<'gps' | 'ip' | 'manual' | 'none'>('none')
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null)
   const [vehicleModelInput, setVehicleModelInput] = useState('')
   const [vehicleImages, setVehicleImages] = useState<Array<{full:string, thumb:string}>>([])
@@ -91,54 +92,130 @@ export const DriverDashboard = () => {
   
   // Location optimization refs
   const lastLocRef = useRef<{lat:number, lng:number, time:number}|null>(null)
+  const gpsAttemptedRef = useRef(false)
+
+  // IP bazlı konum alma fonksiyonu
+  const fetchIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
+    try {
+      const res = await fetch('https://ipapi.co/json/')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.latitude && data.longitude) {
+          return { lat: data.latitude, lng: data.longitude }
+        }
+      }
+    } catch {}
+    // Alternatif API
+    try {
+      const res = await fetch('https://ip-api.com/json/')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.lat && data.lon) {
+          return { lat: data.lat, lng: data.lon }
+        }
+      }
+    } catch {}
+    return null
+  }
 
   useEffect(() => {
-    if (navigator.geolocation && me?.id) {
-      const id = navigator.geolocation.watchPosition(p => {
-        setLocating(false)
-        
-        const newLat = p.coords.latitude
-        const newLng = p.coords.longitude
-        const now = Date.now()
-        
-        // Optimization: Throttle & Distance Filter
-        let shouldUpdate = false
-        
-        if (!lastLocRef.current) {
-          shouldUpdate = true
-        } else {
-          const { lat: oldLat, lng: oldLng, time: oldTime } = lastLocRef.current
-          const timeDiff = now - oldTime
-          
-          // Haversine distance (meters)
-          const R = 6371e3
-          const φ1 = oldLat * Math.PI/180
-          const φ2 = newLat * Math.PI/180
-          const Δφ = (newLat-oldLat) * Math.PI/180
-          const Δλ = (newLng-oldLng) * Math.PI/180
-          const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                    Math.cos(φ1) * Math.cos(φ2) *
-                    Math.sin(Δλ/2) * Math.sin(Δλ/2)
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-          const dist = R * c
-          
-          // Update if moved > 10m OR last update was > 10s ago
-          if (dist > 10 || timeDiff > 10000) {
-            shouldUpdate = true
-          }
-        }
+    if (!me?.id) return
+    
+    let watchIdLocal: number | null = null
+    let ipLocationAttempted = false
 
-        if (shouldUpdate) {
-          lastLocRef.current = { lat: newLat, lng: newLng, time: now }
-          updateLocation({ lat: newLat, lng: newLng })
-          appendRoutePoint({ lat: newLat, lng: newLng })
+    // Önce GPS dene
+    if (navigator.geolocation) {
+      watchIdLocal = navigator.geolocation.watchPosition(
+        (p) => {
+          setLocating(false)
+          setLocationSource('gps')
+          
+          const newLat = p.coords.latitude
+          const newLng = p.coords.longitude
+          const now = Date.now()
+          
+          let shouldUpdate = false
+          
+          if (!lastLocRef.current) {
+            shouldUpdate = true
+          } else {
+            const { lat: oldLat, lng: oldLng, time: oldTime } = lastLocRef.current
+            const timeDiff = now - oldTime
+            
+            const R = 6371e3
+            const φ1 = oldLat * Math.PI/180
+            const φ2 = newLat * Math.PI/180
+            const Δφ = (newLat-oldLat) * Math.PI/180
+            const Δλ = (newLng-oldLng) * Math.PI/180
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2)
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+            const dist = R * c
+            
+            if (dist > 10 || timeDiff > 10000) {
+              shouldUpdate = true
+            }
+          }
+
+          if (shouldUpdate) {
+            lastLocRef.current = { lat: newLat, lng: newLng, time: now }
+            updateLocation({ lat: newLat, lng: newLng })
+            appendRoutePoint({ lat: newLat, lng: newLng })
+          }
+        },
+        async (err) => {
+          console.warn('GPS hatası:', err.message)
+          gpsAttemptedRef.current = true
+          
+          // GPS başarısız olursa IP bazlı konum dene
+          if (!ipLocationAttempted) {
+            ipLocationAttempted = true
+            setLocating(true)
+            toast.info('GPS kullanılamıyor, IP bazlı konum aranıyor...')
+            
+            const ipLoc = await fetchIpLocation()
+            if (ipLoc) {
+              setLocating(false)
+              setLocationSource('ip')
+              updateLocation(ipLoc)
+              toast.success(`Yaklaşık konumunuz bulundu (${ipLoc.lat.toFixed(2)}, ${ipLoc.lng.toFixed(2)}). Haritada tıklayarak tam konumunuzu seçebilirsiniz.`)
+            } else {
+              setLocating(false)
+              setLocationSource('none')
+              toast.warning('Konum bulunamadı. Lütfen haritada tıklayarak konumunuzu seçin.')
+            }
+          }
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      ) as unknown as number
+      setWatchId(watchIdLocal)
+    } else {
+      // Geolocation desteklenmiyor, IP bazlı dene
+      (async () => {
+        ipLocationAttempted = true
+        setLocating(true)
+        toast.info('GPS desteklenmiyor, IP bazlı konum aranıyor...')
+        
+        const ipLoc = await fetchIpLocation()
+        if (ipLoc) {
+          setLocating(false)
+          setLocationSource('ip')
+          updateLocation(ipLoc)
+          toast.success(`Yaklaşık konumunuz bulundu. Haritada tıklayarak tam konumunuzu seçebilirsiniz.`)
+        } else {
+          setLocating(false)
+          setLocationSource('none')
+          toast.warning('Konum bulunamadı. Lütfen haritada tıklayarak konumunuzu seçin.')
         }
-      }, (err) => {
-        console.warn('GPS hatası:', err.message)
-        toast.error('Konum alınamıyor: ' + err.message)
-      }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }) as unknown as number
-      setWatchId(id)
-      return () => { try { if (id) navigator.geolocation.clearWatch(id) } catch {} }
+      })()
+    }
+    
+    return () => { 
+      try { 
+        if (watchIdLocal) navigator.geolocation.clearWatch(watchIdLocal) 
+      } catch {} 
     }
   }, [me?.id])
   
@@ -465,8 +542,24 @@ export const DriverDashboard = () => {
                     </h2>
                     {(() => {
                       const hasValidLocation = me.location && (me.location.lat !== 0 || me.location.lng !== 0)
+                      const sourceIcon = locationSource === 'gps' ? '📍' : locationSource === 'ip' ? '🌐' : locationSource === 'manual' ? '👆' : '⏳'
+                      const sourceText = locationSource === 'gps' ? 'GPS Konum' : locationSource === 'ip' ? 'IP Bazlı (Yaklaşık)' : locationSource === 'manual' ? 'Manuel Seçim' : 'Bekleniyor...'
+                      const sourceColor = locationSource === 'gps' ? 'text-green-600' : locationSource === 'ip' ? 'text-blue-600' : locationSource === 'manual' ? 'text-purple-600' : 'text-gray-500'
+                      
                       return (
                         <div className="mt-3 flex flex-col gap-2">
+                          {/* Konum kaynağı bilgisi */}
+                          <div className="flex items-center gap-2 text-sm">
+                            <span>{sourceIcon}</span>
+                            <span className={`font-medium ${sourceColor}`}>{sourceText}</span>
+                            {hasValidLocation && (
+                              <span className="text-xs text-gray-400">
+                                ({me.location.lat.toFixed(4)}, {me.location.lng.toFixed(4)})
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* Müsait toggle */}
                           <div className="flex items-center gap-3">
                             <span className="text-sm text-gray-600">Durum:</span>
                             <label className={`relative inline-flex items-center ${hasValidLocation ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
@@ -490,16 +583,30 @@ export const DriverDashboard = () => {
                               </span>
                             </label>
                           </div>
-                          {!hasValidLocation && (
+                          
+                          {/* Uyarı mesajları */}
+                          {locating && !hasValidLocation && (
                             <div className="flex items-center gap-2 text-amber-600 text-xs bg-amber-50 px-3 py-2 rounded-lg">
-                              <span className="animate-pulse">📍</span>
-                              <span>Konumunuz yükleniyor... GPS aktif olduğunda müsait duruma geçebilirsiniz.</span>
+                              <span className="animate-pulse">⏳</span>
+                              <span>Konumunuz aranıyor...</span>
                             </div>
                           )}
-                          {hasValidLocation && (
+                          {!locating && !hasValidLocation && (
+                            <div className="flex items-center gap-2 text-red-600 text-xs bg-red-50 px-3 py-2 rounded-lg">
+                              <span>⚠️</span>
+                              <span>Konum bulunamadı. Lütfen haritada tıklayarak konumunuzu seçin.</span>
+                            </div>
+                          )}
+                          {locationSource === 'ip' && (
+                            <div className="flex items-center gap-2 text-blue-600 text-xs bg-blue-50 px-3 py-2 rounded-lg">
+                              <span>💡</span>
+                              <span>IP bazlı yaklaşık konum. Haritada tıklayarak tam konumunuzu seçebilirsiniz.</span>
+                            </div>
+                          )}
+                          {locationSource === 'gps' && (
                             <div className="flex items-center gap-2 text-green-600 text-xs bg-green-50 px-3 py-2 rounded-lg">
                               <span>✅</span>
-                              <span>Konumunuz aktif. Müsait duruma geçebilirsiniz.</span>
+                              <span>GPS konumu aktif. Konumunuz otomatik güncelleniyor.</span>
                             </div>
                           )}
                         </div>
@@ -515,6 +622,7 @@ export const DriverDashboard = () => {
                         drivers={[{ id: me.id, name: me.name, location: me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : DEFAULT_CENTER, rating: 0, available: me.available }]}
                         highlightDriverId={me.id}
                         onMapClick={(loc) => {
+                          setLocationSource('manual')
                           updateLocation(loc)
                           toast.success('Konum güncellendi! Şimdi müsait duruma geçebilirsiniz.')
                         }}

@@ -170,8 +170,8 @@ router.post('/auth', async (req: Request, res: Response) => {
           { name: 'insurance' },
           { name: 'profile_photo' },
         ],
-        location: { lat: 36.8969, lng: 30.7133 }, // Antalya merkez - GPS alınamazsa buradan başla
-        available: false, // Konum gerçek olmadan müsait olamaz
+        location: { lat: 0, lng: 0 }, // Konum yok - GPS veya IP ile belirlenecek
+        available: false, // Konum olmadan müsait olamaz
         approved: true,
         password: '123456',
       }
