@@ -111,8 +111,9 @@ router.post('/clean-stale-requests', (_req: Request, res: Response) => {
 
 router.post('/apply', (req: Request, res: Response) => {
   const { name, email, password, vehicleType, vehicleModel, licensePlate, docs, location } = req.body || {}
-  if (!name || !email || typeof password !== 'string' || password.length < 6 || !vehicleType || !isValidLatLng(location || { lat: 36.8969, lng: 30.7133 })) {
-    res.status(400).json({ success: false, error: 'invalid_payload' })
+  // Konum ZORUNLU - gerçek konum olmadan kayıt yapılamaz
+  if (!name || !email || typeof password !== 'string' || password.length < 6 || !vehicleType || !location || !isValidLatLng(location)) {
+    res.status(400).json({ success: false, error: 'invalid_payload_location_required' })
     return
   }
   const emailNorm = String(email).trim().toLowerCase()
@@ -135,7 +136,7 @@ router.post('/apply', (req: Request, res: Response) => {
     vehicleModel: vehicleModel || 'Araç',
     licensePlate: licensePlate || '',
     docs: docsArr.map((x:any)=>({ name: x?.name, url: x?.url })),
-    location: location || { lat: 36.8969, lng: 30.7133 },
+    location: location, // Sürücünün gerçek konumu
     available: false,
     approved: false,
   }
@@ -169,8 +170,8 @@ router.post('/auth', async (req: Request, res: Response) => {
           { name: 'insurance' },
           { name: 'profile_photo' },
         ],
-        location: { lat: 36.8969, lng: 30.7133 },
-        available: true,
+        location: { lat: 0, lng: 0 }, // Konum yok - sürücü dashboard'tan gönderecek
+        available: false, // Konum olmadan müsait olamaz
         approved: true,
         password: '123456',
       }

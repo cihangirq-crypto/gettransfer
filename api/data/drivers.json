@@ -20,11 +20,8 @@
         "name": "profile_photo"
       }
     ],
-    "location": {
-      "lat": 36.8969,
-      "lng": 30.7133
-    },
-    "available": true,
+    "location": null,
+    "available": false,
     "approved": true,
     "password": "123456"
   },
@@ -50,11 +47,8 @@
         "name": "profile_photo"
       }
     ],
-    "location": {
-      "lat": 36.8969,
-      "lng": 30.7133
-    },
-    "available": true,
+    "location": null,
+    "available": false,
     "approved": true
   }
 ]
