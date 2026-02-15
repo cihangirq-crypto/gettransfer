@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import GoogleMap from '@/components/GoogleMap';
+import OpenStreetMap from '@/components/OpenStreetMap';
 import { DriverStatusCard } from '@/components/DriverStatusCard';
 import { LocationDetector } from '@/components/LocationDetector';
 import { useBookingStore } from '@/stores/bookingStore';
@@ -221,84 +221,47 @@ export const ImmediateRideRequest: React.FC = () => {
     }
   };
 
-  // Calculate distance and price using Google Distance Matrix API
-  const calculateDistanceAndPrice = useCallback(async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
-    try {
-      // Use backend API for Google Distance Matrix
-      const res = await fetch(`${API}/maps/distance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          origins: [from],
-          destinations: [to]
-        })
-      });
-      
-      const j = await res.json();
-      
-      if (j.success && j.data && j.data[0]) {
-        const distanceKm = j.data[0].distance.value / 1000; // meters to km
-        const durationMin = j.data[0].duration.value / 60; // seconds to minutes
-        
-        setEstimatedDistance(Math.round(distanceKm * 10) / 10);
-        setEstimatedTime(Math.round(durationMin));
-        
-        const breakdown = computeTripPricing(distanceKm, pricing);
-        setPricingBreakdown({
-          driverFare: breakdown.driverFare,
-          platformFee: breakdown.platformFee,
-          total: breakdown.total,
-          customerPerKm: breakdown.customerPerKm
-        });
-        setEstimatedPrice(breakdown.total);
-      } else {
-        // Fallback to Haversine if API fails
-        const R = 6371;
-        const dLat = (to.lat - from.lat) * Math.PI / 180;
-        const dLng = (to.lng - from.lng) * Math.PI / 180;
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-          Math.cos(from.lat * Math.PI / 180) * Math.cos(to.lat * Math.PI / 180) *
-          Math.sin(dLng/2) * Math.sin(dLng/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        const distance = R * c;
-        
-        setEstimatedDistance(Math.round(distance * 10) / 10);
-        setEstimatedTime(Math.round(distance * 2));
-        
-        const breakdown = computeTripPricing(distance, pricing);
-        setPricingBreakdown({
-          driverFare: breakdown.driverFare,
-          platformFee: breakdown.platformFee,
-          total: breakdown.total,
-          customerPerKm: breakdown.customerPerKm
-        });
-        setEstimatedPrice(breakdown.total);
-      }
-    } catch (error) {
-      console.error('Distance calculation error:', error);
-      // Fallback calculation
-      const R = 6371;
-      const toRad = (x: number) => x * Math.PI / 180;
-      const dLat = toRad(to.lat - from.lat);
-      const dLng = toRad(to.lng - from.lng);
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(toRad(from.lat)) * Math.cos(toRad(to.lat)) *
-        Math.sin(dLng/2) * Math.sin(dLng/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      const distance = R * c;
-      
-      setEstimatedDistance(Math.round(distance * 10) / 10);
-      setEstimatedTime(Math.round(distance * 2));
-      
-      const breakdown = computeTripPricing(distance, pricing);
-      setPricingBreakdown({
-        driverFare: breakdown.driverFare,
-        platformFee: breakdown.platformFee,
-        total: breakdown.total,
-        customerPerKm: breakdown.customerPerKm
-      });
-      setEstimatedPrice(breakdown.total);
-    }
+  // Handle route calculated from map
+  const handleRouteCalculated = useCallback((distance: number, duration: number) => {
+    setEstimatedDistance(Math.round(distance * 10) / 10);
+    setEstimatedTime(Math.round(duration));
+    
+    const breakdown = computeTripPricing(distance, pricing);
+    setPricingBreakdown({
+      driverFare: breakdown.driverFare,
+      platformFee: breakdown.platformFee,
+      total: breakdown.total,
+      customerPerKm: breakdown.customerPerKm
+    });
+    setEstimatedPrice(breakdown.total);
+  }, [pricing]);
+
+  // Calculate distance and price (fallback for when route not shown)
+  const calculateDistanceAndPrice = useCallback((from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
+    // Haversine formula
+    const R = 6371;
+    const dLat = (to.lat - from.lat) * Math.PI / 180;
+    const dLng = (to.lng - from.lng) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(from.lat * Math.PI / 180) * Math.cos(to.lat * Math.PI / 180) *
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c;
+    
+    // Multiply by 1.3 to approximate road distance (roads aren't straight)
+    const roadDistance = distance * 1.3;
+    
+    setEstimatedDistance(Math.round(roadDistance * 10) / 10);
+    setEstimatedTime(Math.round(roadDistance * 2)); // ~2 min per km
+    
+    const breakdown = computeTripPricing(roadDistance, pricing);
+    setPricingBreakdown({
+      driverFare: breakdown.driverFare,
+      platformFee: breakdown.platformFee,
+      total: breakdown.total,
+      customerPerKm: breakdown.customerPerKm
+    });
+    setEstimatedPrice(breakdown.total);
   }, [pricing]);
 
   // Get destination coordinates from address
@@ -506,7 +469,7 @@ export const ImmediateRideRequest: React.FC = () => {
           <div className="bg-white rounded-lg shadow-md overflow-hidden" style={{ minHeight: '400px' }}>
             <div style={{ height: '500px', width: '100%' }} className="map-container">
               {currentLocation ? (
-                <GoogleMap
+                <OpenStreetMap
                   center={currentLocation}
                   customerLocation={currentLocation}
                   destination={destinationLocation || undefined}
@@ -525,7 +488,7 @@ export const ImmediateRideRequest: React.FC = () => {
                   }}
                   highlightDriverId={selectedDriver || undefined}
                   showRoute={!!destinationLocation}
-                  showTraffic={true}
+                  onRouteCalculated={handleRouteCalculated}
                   className="h-full w-full"
                 />
               ) : (
