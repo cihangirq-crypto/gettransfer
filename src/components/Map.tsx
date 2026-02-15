@@ -5,13 +5,6 @@ import { toast } from 'sonner';
 import { FallbackMap } from './FallbackMap';
 import OpenStreetMap from './OpenStreetMap';
 
-// Google Maps types - fix the circular reference
-declare global {
-  interface Window {
-    google: any;
-  }
-}
-
 interface MapProps {
   center: { lat: number; lng: number };
   zoom?: number;
@@ -43,6 +36,7 @@ export const Map: React.FC<MapProps> = ({
   const [mapLoading, setMapLoading] = useState(true);
   const [mapError, setMapError] = useState(false);
   const [useOsmFallback, setUseOsmFallback] = useState(false);
+  const [directionsRenderer, setDirectionsRenderer] = useState<any>(null);
 
   useEffect(() => {
     const initMap = async () => {
@@ -108,6 +102,19 @@ export const Map: React.FC<MapProps> = ({
 
           console.log('📍 Google Maps nesnesi oluşturuldu');
           setMap(googleMap);
+          
+          // Initialize directions renderer for real routes
+          const renderer = new window.google.maps.DirectionsRenderer({
+            map: googleMap,
+            suppressMarkers: true, // We use custom markers
+            polylineOptions: {
+              strokeColor: '#2563eb',
+              strokeWeight: 5,
+              strokeOpacity: 0.8,
+            },
+          });
+          setDirectionsRenderer(renderer);
+          
           setMapLoading(false);
           console.log('📍 Harita state güncellendi, merkez:', center);
         } catch (error) {
@@ -194,33 +201,49 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [map, drivers, onDriverClick]);
 
-  // Draw route
+  // Draw route with real directions
   useEffect(() => {
-    if (map && customerLocation && destination && showRoute) {
-      // Clear existing route
-      if (routePolyline) {
-        routePolyline.setMap(null);
-      }
-
-      // Draw route
-      const route = new window.google.maps.Polyline({
-        path: [customerLocation, destination],
-        geodesic: true,
-        strokeColor: '#2563eb',
-        strokeOpacity: 0.8,
-        strokeWeight: 4,
-      });
-
-      route.setMap(map);
-      setRoutePolyline(route);
-
-      // Fit bounds to show both points
-      const bounds = new window.google.maps.LatLngBounds();
-      bounds.extend(customerLocation);
-      bounds.extend(destination);
-      map.fitBounds(bounds);
+    if (map && customerLocation && destination && showRoute && directionsRenderer) {
+      // Use Directions Service for real road route
+      const directionsService = new window.google.maps.DirectionsService();
+      
+      directionsService.route(
+        {
+          origin: customerLocation,
+          destination: destination,
+          travelMode: window.google.maps.TravelMode.DRIVING,
+        },
+        (result: any, status: string) => {
+          if (status === 'OK') {
+            directionsRenderer.setDirections(result);
+            
+            // Fit bounds to show entire route
+            const bounds = new window.google.maps.LatLngBounds();
+            result.routes[0].bounds.extend(bounds.getNorthEast());
+            result.routes[0].bounds.extend(bounds.getSouthWest());
+            map.fitBounds(result.routes[0].bounds, 50);
+          } else {
+            console.error('Directions request failed:', status);
+            // Fallback to straight line
+            const route = new window.google.maps.Polyline({
+              path: [customerLocation, destination],
+              geodesic: true,
+              strokeColor: '#2563eb',
+              strokeOpacity: 0.8,
+              strokeWeight: 4,
+            });
+            route.setMap(map);
+            setRoutePolyline(route);
+            
+            const bounds = new window.google.maps.LatLngBounds();
+            bounds.extend(customerLocation);
+            bounds.extend(destination);
+            map.fitBounds(bounds);
+          }
+        }
+      );
     }
-  }, [map, customerLocation, destination, showRoute]);
+  }, [map, customerLocation, destination, showRoute, directionsRenderer]);
 
   // Draw driver path
   useEffect(() => {

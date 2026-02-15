@@ -1,18 +1,56 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+// OSRM Route API types
+interface OSRMCoordinate {
+  lat: number;
+  lng: number;
+}
+
+interface OSRMRoute {
+  geometry: {
+    coordinates: [number, number][];
+  };
+  distance: number;
+  duration: number;
+}
+
+interface OSRMResponse {
+  routes: OSRMRoute[];
+  code: string;
+}
+
+// Fetch real road route from OSRM
+const fetchOSRMRoute = async (start: OSRMCoordinate, end: OSRMCoordinate): Promise<OSRMCoordinate[] | null> => {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+    const response = await fetch(url);
+    const data: OSRMResponse = await response.json();
+    
+    if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+      const coordinates = data.routes[0].geometry.coordinates;
+      // Convert from [lng, lat] to {lat, lng}
+      return coordinates.map(([lng, lat]) => ({ lat, lng }));
+    }
+    return null;
+  } catch (error) {
+    console.error('OSRM route fetch error:', error);
+    return null;
+  }
+};
+// import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+// import markerIcon from 'leaflet/dist/images/marker-icon.png';
+// import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 
 // Fix for default markers in Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
+/* L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
   iconUrl: markerIcon,
   shadowUrl: markerShadow,
-});
+}); */
 
 interface Location {
   lat: number;
@@ -131,6 +169,50 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
   dropoffLocation,
   showRoute,
 }) => {
+  // Route state for real road paths
+  const [routeToPickup, setRouteToPickup] = useState<Location[]>([]);
+  const [routeToDropoff, setRouteToDropoff] = useState<Location[]>([]);
+  const [routeLoading, setRouteLoading] = useState(false);
+
+  // Fetch real routes when locations change
+  useEffect(() => {
+    const fetchRoutes = async () => {
+      setRouteLoading(true);
+      
+      // Route from highlighted driver to pickup
+      if (showRoute === 'to_pickup' && pickupLocation && highlightDriverId) {
+        const driver = drivers.find(d => d.id === highlightDriverId);
+        if (driver) {
+          const route = await fetchOSRMRoute(driver.location, pickupLocation);
+          setRouteToPickup(route || [driver.location, pickupLocation]);
+        }
+      }
+      
+      // Route from pickup to dropoff
+      if (showRoute === 'to_dropoff' && pickupLocation && dropoffLocation) {
+        const route = await fetchOSRMRoute(pickupLocation, dropoffLocation);
+        setRouteToDropoff(route || [pickupLocation, dropoffLocation]);
+      }
+      
+      // Both routes
+      if (showRoute === 'both' && pickupLocation && dropoffLocation && highlightDriverId) {
+        const driver = drivers.find(d => d.id === highlightDriverId);
+        if (driver) {
+          const [toPickup, toDropoff] = await Promise.all([
+            fetchOSRMRoute(driver.location, pickupLocation),
+            fetchOSRMRoute(pickupLocation, dropoffLocation)
+          ]);
+          setRouteToPickup(toPickup || [driver.location, pickupLocation]);
+          setRouteToDropoff(toDropoff || [pickupLocation, dropoffLocation]);
+        }
+      }
+      
+      setRouteLoading(false);
+    };
+    
+    fetchRoutes();
+  }, [showRoute, pickupLocation, dropoffLocation, highlightDriverId, drivers]);
+
   const customIcon = L.divIcon({
     html: `<div style="background-color: #3b82f6; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
     className: 'custom-marker',
@@ -298,16 +380,52 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
           </Marker>
         )}
 
-        {/* Rota Çizimi - Şoförden pickup'a */}
-        {showRoute === 'to_pickup' && pickupLocation && highlightDriverId && (() => {
-          const d = drivers.find(x => x.id === highlightDriverId)
-          if (!d) return null
-          return <Polyline positions={[[d.location.lat, d.location.lng], [pickupLocation.lat, pickupLocation.lng]]} color="#22c55e" weight={4} opacity={0.8} />
-        })()}
+        {/* Rota Çizimi - Şoförden pickup'a (Gerçek yol rotası) */}
+        {showRoute === 'to_pickup' && routeToPickup.length > 1 && (
+          <Polyline 
+            positions={routeToPickup.map(p => [p.lat, p.lng])} 
+            color="#22c55e" 
+            weight={5} 
+            opacity={0.8}
+          />
+        )}
+        {showRoute === 'to_pickup' && routeLoading && pickupLocation && (
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white px-3 py-2 rounded-lg shadow-lg text-sm z-[1000]">
+            Rota hesaplanıyor...
+          </div>
+        )}
 
-        {/* Rota Çizimi - Pickup'tan dropoff'a */}
-        {showRoute === 'to_dropoff' && pickupLocation && dropoffLocation && (
-          <Polyline positions={[[pickupLocation.lat, pickupLocation.lng], [dropoffLocation.lat, dropoffLocation.lng]]} color="#ef4444" weight={4} opacity={0.8} />
+        {/* Rota Çizimi - Pickup'tan dropoff'a (Gerçek yol rotası) */}
+        {showRoute === 'to_dropoff' && routeToDropoff.length > 1 && (
+          <Polyline 
+            positions={routeToDropoff.map(p => [p.lat, p.lng])} 
+            color="#ef4444" 
+            weight={5} 
+            opacity={0.8}
+          />
+        )}
+        {showRoute === 'to_dropoff' && routeLoading && pickupLocation && dropoffLocation && (
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white px-3 py-2 rounded-lg shadow-lg text-sm z-[1000]">
+            Rota hesaplanıyor...
+          </div>
+        )}
+
+        {/* Her iki rota (both mode) */}
+        {showRoute === 'both' && routeToPickup.length > 1 && (
+          <Polyline 
+            positions={routeToPickup.map(p => [p.lat, p.lng])} 
+            color="#22c55e" 
+            weight={5} 
+            opacity={0.8}
+          />
+        )}
+        {showRoute === 'both' && routeToDropoff.length > 1 && (
+          <Polyline 
+            positions={routeToDropoff.map(p => [p.lat, p.lng])} 
+            color="#ef4444" 
+            weight={5} 
+            opacity={0.8}
+          />
         )}
 
         {/* Driver path polyline */}
