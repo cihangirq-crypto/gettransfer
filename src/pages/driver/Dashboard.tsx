@@ -463,20 +463,48 @@ export const DriverDashboard = () => {
                       <MapPin className="h-6 w-6 mr-2 text-blue-600" />
                       Konumunuz ve Rota
                     </h2>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">Müsait</span>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked={me.available} onChange={(e) => {
-                          const next = e.target.checked
-                          if (next && (!me.location || (me.location.lat === 0 && me.location.lng === 0))) {
-                            toast.error('Müsait duruma geçmek için önce konum seçin')
-                            return
-                          }
-                          setAvailable(next)
-                        }} className="sr-only peer" />
-                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                      </label>
-                    </div>
+                    {(() => {
+                      const hasValidLocation = me.location && (me.location.lat !== 0 || me.location.lng !== 0)
+                      return (
+                        <div className="mt-3 flex flex-col gap-2">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm text-gray-600">Durum:</span>
+                            <label className={`relative inline-flex items-center ${hasValidLocation ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                              <input
+                                type="checkbox"
+                                checked={me.available ?? false}
+                                disabled={!hasValidLocation}
+                                onChange={(e) => {
+                                  const next = e.target.checked
+                                  if (!hasValidLocation) {
+                                    toast.error('Müsait duruma geçmek için önce konumunuz yüklenmeli')
+                                    return
+                                  }
+                                  setAvailable(next)
+                                }}
+                                className="sr-only peer"
+                              />
+                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+                              <span className={`ml-2 text-sm font-medium ${(me.available ?? false) ? 'text-green-600' : 'text-gray-500'}`}>
+                                {(me.available ?? false) ? 'Müsait' : 'Meşgul'}
+                              </span>
+                            </label>
+                          </div>
+                          {!hasValidLocation && (
+                            <div className="flex items-center gap-2 text-amber-600 text-xs bg-amber-50 px-3 py-2 rounded-lg">
+                              <span className="animate-pulse">📍</span>
+                              <span>Konumunuz yükleniyor... GPS aktif olduğunda müsait duruma geçebilirsiniz.</span>
+                            </div>
+                          )}
+                          {hasValidLocation && (
+                            <div className="flex items-center gap-2 text-green-600 text-xs bg-green-50 px-3 py-2 rounded-lg">
+                              <span>✅</span>
+                              <span>Konumunuz aktif. Müsait duruma geçebilirsiniz.</span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                   <div className="h-96 rounded-lg overflow-hidden border border-gray-200 relative">
                     {locating && (!me.location || (me.location.lat === 0 && me.location.lng === 0)) && (

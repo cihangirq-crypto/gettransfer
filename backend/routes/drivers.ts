@@ -201,7 +201,8 @@ router.post('/auth', async (req: Request, res: Response) => {
       role: 'driver',
       approved: found.approved,
       vehicleType: found.vehicleType,
-      location: found.location
+      location: found.location,
+      available: found.available ?? false
     }
   })
 })
