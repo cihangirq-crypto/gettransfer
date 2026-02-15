@@ -503,8 +503,8 @@ export const ImmediateRideRequest: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Left Side - Map */}
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <div className="h-96 lg:h-full min-h-96 map-container">
+          <div className="bg-white rounded-lg shadow-md overflow-hidden" style={{ minHeight: '400px' }}>
+            <div style={{ height: '500px', width: '100%' }} className="map-container">
               {currentLocation ? (
                 <GoogleMap
                   center={currentLocation}

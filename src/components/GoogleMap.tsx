@@ -103,18 +103,39 @@ export const GoogleMap: React.FC<GoogleMapProps> = ({
           googleMapsLoaded = true;
         }
 
-        // Wait for DOM element
+        // Wait for DOM element with longer timeout and better checking
         let attempts = 0;
-        while (!mapRef.current && attempts < 20) {
+        const maxAttempts = 50; // 5 seconds max
+        
+        while (attempts < maxAttempts) {
+          // Check if container exists and has dimensions
+          if (mapRef.current && mapRef.current.offsetWidth > 0 && mapRef.current.offsetHeight > 0) {
+            break;
+          }
           await new Promise(r => setTimeout(r, 100));
           attempts++;
         }
 
         if (!mapRef.current) {
-          setError('Harita container bulunamadı');
+          setError('Harita container bulunamadı. Lütfen sayfayı yenileyin.');
           setLoading(false);
           return;
         }
+
+        // Check if container has dimensions
+        if (mapRef.current.offsetWidth === 0 || mapRef.current.offsetHeight === 0) {
+          console.warn('Harita container boyutu 0, tekrar deneniyor...');
+          // Wait a bit more for CSS to apply
+          await new Promise(r => setTimeout(r, 500));
+          
+          if (mapRef.current.offsetWidth === 0 || mapRef.current.offsetHeight === 0) {
+            setError('Harita alanı çok küçük. Lütfen sayfayı yenileyin.');
+            setLoading(false);
+            return;
+          }
+        }
+
+        console.log('Harita container bulundu:', mapRef.current.offsetWidth, 'x', mapRef.current.offsetHeight);
 
         // Create map
         const map = new window.google.maps.Map(mapRef.current, {
@@ -166,7 +187,9 @@ export const GoogleMap: React.FC<GoogleMapProps> = ({
       }
     };
 
-    initMap();
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(initMap, 100);
+    return () => clearTimeout(timer);
   }, []);
 
   // Update center
@@ -405,7 +428,7 @@ export const GoogleMap: React.FC<GoogleMapProps> = ({
   // Loading state
   if (loading) {
     return (
-      <div className={`${className} bg-gray-100 rounded-lg flex items-center justify-center`}>
+      <div className={className} style={{ width: '100%', height: '100%', minHeight: '400px', backgroundColor: '#f3f4f6', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-3"></div>
           <p className="text-gray-600">Google Maps yükleniyor...</p>
@@ -417,7 +440,7 @@ export const GoogleMap: React.FC<GoogleMapProps> = ({
   // Error state
   if (error) {
     return (
-      <div className={`${className} bg-gray-100 rounded-lg flex items-center justify-center`}>
+      <div className={className} style={{ width: '100%', height: '100%', minHeight: '400px', backgroundColor: '#f3f4f6', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="text-center p-4">
           <p className="text-red-600 mb-2">⚠️ {error}</p>
           <p className="text-sm text-gray-500">Lütfen sayfayı yenileyin</p>
@@ -427,8 +450,8 @@ export const GoogleMap: React.FC<GoogleMapProps> = ({
   }
 
   return (
-    <div className={`relative ${className}`}>
-      <div ref={mapRef} className="w-full h-full rounded-lg" />
+    <div className={className} style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div ref={mapRef} style={{ width: '100%', height: '100%', minHeight: '400px' }} />
 
       {/* Traffic indicator */}
       {showTraffic && (
