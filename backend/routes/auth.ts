@@ -1,6 +1,174 @@
 import { Router, type Request, type Response } from 'express'
+import crypto from 'crypto'
 
 const router = Router()
+
+// Google OAuth Configuration
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || ''
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || ''
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'https://gettransfer.vercel.app/api/auth/google/callback'
+
+// In-memory state store for OAuth (in production, use Redis or database)
+const oauthStates = new Map<string, { createdAt: number, redirect?: string }>()
+
+// Clean up expired states every 5 minutes
+setInterval(() => {
+  const now = Date.now()
+  for (const [state, data] of oauthStates.entries()) {
+    if (now - data.createdAt > 5 * 60 * 1000) {
+      oauthStates.delete(state)
+    }
+  }
+}, 5 * 60 * 1000)
+
+// Generate Google OAuth URL
+router.get('/google', async (req: Request, res: Response): Promise<void> => {
+  if (!GOOGLE_CLIENT_ID) {
+    res.status(500).json({ success: false, error: 'Google OAuth yapılandırılmamış. Lütfen GOOGLE_CLIENT_ID ortam değişkenini ayarlayın.' })
+    return
+  }
+
+  const state = crypto.randomBytes(32).toString('hex')
+  const redirect = req.query.redirect as string | undefined
+  
+  oauthStates.set(state, { createdAt: Date.now(), redirect })
+  
+  const scope = encodeURIComponent('email profile')
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}&response_type=code&scope=${scope}&state=${state}`
+  
+  res.redirect(authUrl)
+})
+
+// Google OAuth Callback
+router.get('/google/callback', async (req: Request, res: Response): Promise<void> => {
+  const { code, state, error } = req.query
+
+  if (error) {
+    res.redirect(`/?auth_error=${encodeURIComponent(error as string)}`)
+    return
+  }
+
+  if (!code || !state) {
+    res.redirect('/?auth_error=missing_params')
+    return
+  }
+
+  const stateData = oauthStates.get(state as string)
+  if (!stateData) {
+    res.redirect('/?auth_error=invalid_state')
+    return
+  }
+  oauthStates.delete(state as string)
+
+  try {
+    // Exchange code for tokens
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code: code as string,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: GOOGLE_REDIRECT_URI,
+        grant_type: 'authorization_code',
+      }).toString(),
+    })
+
+    if (!tokenResponse.ok) {
+      console.error('Token exchange failed:', await tokenResponse.text())
+      res.redirect('/?auth_error=token_exchange_failed')
+      return
+    }
+
+    const tokens = await tokenResponse.json()
+    const accessToken = tokens.access_token
+
+    // Get user info from Google
+    const userResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+
+    if (!userResponse.ok) {
+      res.redirect('/?auth_error=user_info_failed')
+      return
+    }
+
+    const googleUser = await userResponse.json()
+    
+    // Create or find user in database
+    const user = {
+      id: 'google_' + googleUser.id,
+      email: googleUser.email,
+      name: googleUser.name,
+      picture: googleUser.picture,
+      phone: '',
+      role: 'customer',
+      isVerified: googleUser.verified_email ?? true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    // Generate a mock token (in production, use JWT)
+    const token = 'google_token_' + crypto.randomBytes(16).toString('hex')
+
+    // Redirect to frontend with token
+    const redirectUrl = stateData.redirect || '/'
+    res.redirect(`${redirectUrl}?auth_success=true&token=${token}&user=${encodeURIComponent(JSON.stringify(user))}`)
+  } catch (err) {
+    console.error('Google OAuth error:', err)
+    res.redirect('/?auth_error=oauth_error')
+  }
+})
+
+// Google One Tap / Sign In With Google - for frontend-posted ID token
+router.post('/google', async (req: Request, res: Response): Promise<void> => {
+  const { credential } = req.body
+
+  if (!credential) {
+    res.status(400).json({ success: false, error: 'Google credential gerekli' })
+    return
+  }
+
+  try {
+    // Verify the Google ID token
+    const verifyResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`)
+    
+    if (!verifyResponse.ok) {
+      res.status(401).json({ success: false, error: 'Geçersiz Google token' })
+      return
+    }
+
+    const googleUser = await verifyResponse.json()
+    
+    // Create or find user
+    const user = {
+      id: 'google_' + googleUser.sub,
+      email: googleUser.email,
+      name: googleUser.name,
+      picture: googleUser.picture,
+      phone: '',
+      role: 'customer',
+      isVerified: googleUser.email_verified ?? true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    // Generate token
+    const token = 'google_token_' + crypto.randomBytes(16).toString('hex')
+
+    res.json({ 
+      success: true, 
+      data: { 
+        user, 
+        token, 
+        refreshToken: 'refresh_' + crypto.randomBytes(16).toString('hex') 
+      } 
+    })
+  } catch (err) {
+    console.error('Google token verify error:', err)
+    res.status(500).json({ success: false, error: 'Google giriş hatası' })
+  }
+})
 
 router.post('/register/customer', async (req: Request, res: Response): Promise<void> => {
   const { email = 'customer@example.com', name = 'Müşteri' } = req.body || {}

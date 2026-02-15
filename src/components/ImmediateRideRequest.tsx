@@ -48,9 +48,61 @@ export const ImmediateRideRequest: React.FC = () => {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
-  // Google ile giriş
+  // Google ile giriş - Google Identity Services kullanarak
   const handleGoogleLogin = () => {
-    window.location.href = '/api/auth/google';
+    // Google Identity Services kontrolü
+    const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    
+    if (!googleClientId) {
+      toast.error('Google giriş yapılandırılmamış');
+      return;
+    }
+
+    // Google One Tap / Sign In With Google
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: async (response: { credential: string }) => {
+          // Backend'e credential'ı gönder
+          try {
+            const res = await fetch(`${API}/auth/google`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ credential: response.credential })
+            });
+            const j = await res.json();
+            if (res.ok && j.success) {
+              toast.success('Google ile giriş başarılı!');
+              setShowRegister(false);
+              if (j.data?.token) {
+                useAuthStore.getState().setTokens(j.data.token, j.data.refreshToken || '');
+              }
+              if (j.data?.user) {
+                useAuthStore.getState().setUser(j.data.user);
+              }
+              navigate(0);
+            } else {
+              toast.error(j.error || 'Google giriş başarısız');
+            }
+          } catch (err) {
+            console.error('Google login error:', err);
+            toast.error('Google giriş hatası');
+          }
+        },
+      });
+      
+      // Google Sign-In popup'ı göster
+      window.google.accounts.id.prompt((notification: any) => {
+        // Eğer popup gösterilemezse, fallback olarak redirect kullan
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          // OAuth redirect fallback
+          window.location.href = '/api/auth/google';
+        }
+      });
+    } else {
+      // Google script yüklenmediyse, OAuth redirect kullan
+      window.location.href = '/api/auth/google';
+    }
   };
 
   // Kayıt ol
@@ -71,7 +123,10 @@ export const ImmediateRideRequest: React.FC = () => {
         toast.success('Kayıt başarılı! Hoş geldiniz.');
         setShowRegister(false);
         if (j.data?.token) {
-          useAuthStore.getState().setToken(j.data.token);
+          useAuthStore.getState().setTokens(j.data.token, j.data.refreshToken || '');
+        }
+        if (j.data?.user) {
+          useAuthStore.getState().setUser(j.data.user);
         }
         navigate(0);
       } else {
@@ -95,7 +150,10 @@ export const ImmediateRideRequest: React.FC = () => {
         toast.success('Giriş başarılı! Hoş geldiniz.');
         setShowRegister(false);
         if (j.data?.token) {
-          useAuthStore.getState().setToken(j.data.token);
+          useAuthStore.getState().setTokens(j.data.token, j.data.refreshToken || '');
+        }
+        if (j.data?.user) {
+          useAuthStore.getState().setUser(j.data.user);
         }
         navigate(0);
       } else {
