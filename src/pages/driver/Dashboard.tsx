@@ -507,23 +507,27 @@ export const DriverDashboard = () => {
                     })()}
                   </div>
                   <div className="h-96 rounded-lg overflow-hidden border border-gray-200 relative">
-                    {locating && (!me.location || (me.location.lat === 0 && me.location.lng === 0)) && (
-                      <div className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center">
-                        <span className="text-sm text-gray-600">Konum alınıyor...</span>
-                      </div>
-                    )}
+                    {/* GPS yükleniyor göstergesi artık yok - harita direkt açılıyor */}
                     <OpenStreetMap
                         center={me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : DEFAULT_CENTER}
                         customerLocation={customerLiveLocation || (me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : DEFAULT_CENTER)}
                         destination={activeBooking ? (activeBooking.status === 'in_progress' ? activeBooking.dropoffLocation : activeBooking.pickupLocation) : (selectedRequest ? selectedRequest.pickup : undefined)}
                         drivers={[{ id: me.id, name: me.name, location: me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : DEFAULT_CENTER, rating: 0, available: me.available }]}
                         highlightDriverId={me.id}
-                        onMapClick={(loc) => updateLocation(loc)}
+                        onMapClick={(loc) => {
+                          updateLocation(loc)
+                          toast.success('Konum güncellendi! Şimdi müsait duruma geçebilirsiniz.')
+                        }}
                         path={activeBooking ? (useBookingStore.getState().routePoints || []) : []}
                         pickupLocation={activeBooking?.pickupLocation}
                         dropoffLocation={activeBooking?.dropoffLocation}
                         showRoute={activeBooking ? (activeBooking.status === 'in_progress' ? 'to_dropoff' : 'to_pickup') : undefined}
                       />
+                    {/* Manuel konum seçimi için ipucu */}
+                    <div className="absolute bottom-2 left-2 right-2 bg-blue-500/90 text-white text-xs px-3 py-2 rounded-lg flex items-center gap-2">
+                      <span>📍</span>
+                      <span>Haritada tıklayarak konumunuzu güncelleyebilirsiniz</span>
+                    </div>
                   </div>
                   {activeBooking && approved === true && (
                     <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
