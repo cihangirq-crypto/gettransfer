@@ -207,9 +207,18 @@ router.post('/auth', async (req: Request, res: Response) => {
   })
 })
 
-router.post('/location', (req: Request, res: Response) => {
+router.post('/location', async (req: Request, res: Response) => {
   const { id, location, available } = req.body || {}
-  const d = drivers.get(id)
+  let d = drivers.get(id)
+  
+  // Sürücü bellekte yoksa veritabanından yükle
+  if (!d) {
+    try {
+      d = await getDriver(id) as DriverSession | undefined
+      if (d) drivers.set(id, d)
+    } catch {}
+  }
+  
   if (!d) {
     res.status(404).json({ success: false, error: 'driver_not_found' })
     return
@@ -236,9 +245,18 @@ router.post('/location', (req: Request, res: Response) => {
   res.json({ success: true })
 })
 
-router.post('/status', (req: Request, res: Response) => {
+router.post('/status', async (req: Request, res: Response) => {
   const { id, available } = req.body || {}
-  const d = drivers.get(id)
+  let d = drivers.get(id)
+  
+  // Sürücü bellekte yoksa veritabanından yükle
+  if (!d) {
+    try {
+      d = await getDriver(id) as DriverSession | undefined
+      if (d) drivers.set(id, d)
+    } catch {}
+  }
+  
   if (!d) { res.status(404).json({ success: false, error: 'driver_not_found' }); return }
   if (!!available && (!d.location || (d.location.lat === 0 && d.location.lng === 0))) {
     res.status(400).json({ success: false, error: 'location_required' })
