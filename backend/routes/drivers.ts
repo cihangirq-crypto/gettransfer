@@ -496,6 +496,37 @@ router.get('/complaints', (_req: Request, res: Response) => {
   res.json({ success: true, data: complaints })
 })
 
+// Admin: Sürücü available durumunu doğrudan veritabanında güncelle
+router.post('/admin/set-available', async (req: Request, res: Response) => {
+  const { id, available } = req.body || {}
+  if (!id) { res.status(400).json({ success: false, error: 'id_required' }); return }
+  
+  try {
+    const d = await getDriver(id)
+    if (!d) { res.status(404).json({ success: false, error: 'driver_not_found' }); return }
+    
+    d.available = !!available
+    await saveDriver(d)
+    res.json({ success: true, data: d })
+  } catch (e) {
+    res.status(500).json({ success: false, error: 'update_failed' })
+  }
+})
+
+// Admin: Tüm sürücüleri offline yap
+router.post('/admin/all-offline', async (_req: Request, res: Response) => {
+  try {
+    const list = await listDriversByStatus('approved')
+    for (const d of list) {
+      d.available = false
+      await saveDriver(d)
+    }
+    res.json({ success: true, message: `${list.length} sürücü offline yapıldı` })
+  } catch (e) {
+    res.status(500).json({ success: false, error: 'update_failed' })
+  }
+})
+
  
 
 export default router
