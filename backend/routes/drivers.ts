@@ -282,6 +282,58 @@ router.post('/profile', (req: Request, res: Response) => {
   res.json({ success: true, data: d })
 })
 
+// Sürücüye özel fiyatlandırma
+router.post('/pricing', async (req: Request, res: Response) => {
+  const { id, driverPerKm, platformFeePercent, customPricing } = req.body || {}
+  
+  let d = drivers.get(id)
+  if (!d) {
+    try {
+      d = await getDriver(id) as DriverSession | undefined
+      if (d) drivers.set(id, d)
+    } catch {}
+  }
+  
+  if (!d) { res.status(404).json({ success: false, error: 'driver_not_found' }); return }
+  
+  // Store pricing info in driver object
+  const updatedDriver = {
+    ...d,
+    driverPerKm: typeof driverPerKm === 'number' ? driverPerKm : undefined,
+    platformFeePercent: typeof platformFeePercent === 'number' ? platformFeePercent : undefined,
+    customPricing: !!customPricing
+  } as any
+  
+  drivers.set(id, updatedDriver)
+  
+  // Also save to database with pricing fields
+  try {
+    const updateData: any = {}
+    if (typeof driverPerKm === 'number') updateData.driver_per_km = driverPerKm
+    if (typeof platformFeePercent === 'number') updateData.platform_fee_percent = platformFeePercent
+    updateData.custom_pricing = !!customPricing
+    
+    // Update in Supabase
+    const SUPABASE_URL = process.env.SUPABASE_URL
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+    
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      await fetch(`${SUPABASE_URL}/rest/v1/drivers?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(updateData)
+      })
+    }
+  } catch {}
+  
+  res.json({ success: true, data: updatedDriver })
+})
+
 router.post('/request', async (req: Request, res: Response) => {
   const { id, customerId, passengerCount, basePrice, pickup, dropoff, vehicleType, targetDriverId } = req.body || {}
   if (!id || !customerId || !pickup || !dropoff || !vehicleType || !isValidLatLng(pickup) || !isValidLatLng(dropoff)) {

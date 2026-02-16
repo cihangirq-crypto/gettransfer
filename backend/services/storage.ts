@@ -1,16 +1,14 @@
-import { createClient } from '@supabase/supabase-js'
 import fetch from 'node-fetch'
 import { logger } from '../utils/logger.js'
-
-// Global fetch polyfill for serverless
-if (!globalThis.fetch) {
-  globalThis.fetch = fetch as any
-}
 
 const getEnv = (k: string) => {
   const v = process.env[k]
   return typeof v === 'string' && v.trim() ? v.trim() : null
 }
+
+// Supabase REST API doğrudan kullan (serverless uyumlu)
+const SUPABASE_URL = getEnv('SUPABASE_URL')
+const SUPABASE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('SUPABASE_ANON_KEY')
 
 type DriverSession = {
   id: string
@@ -33,295 +31,255 @@ type DriverSession = {
 
 let memory: Map<string, DriverSession> = new Map()
 
-const supabaseUrl = getEnv('SUPABASE_URL')
-const supabaseKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('SUPABASE_ANON_KEY')
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } }) : null
-const DOCS_BUCKET = getEnv('SUPABASE_DOCS_BUCKET') || 'driver-docs'
-
-const isDataImageUrl = (u?: string) => typeof u === 'string' && u.startsWith('data:image/')
-const parseDataUrl = (u: string) => {
-  const m = /^data:([^;]+);base64,(.*)$/.exec(u)
-  if (!m) return null
-  return { mime: m[1], b64: m[2] }
-}
-const extFromMime = (mime: string) => {
-  const v = mime.toLowerCase()
-  if (v.includes('png')) return 'png'
-  if (v.includes('webp')) return 'webp'
-  return 'jpg'
-}
-
-async function ensureDocsBucket() {
-  if (!supabase) return
-  try {
-    const { data } = await (supabase.storage as any).getBucket(DOCS_BUCKET)
-    if (data?.name) return
-  } catch {}
-  try {
-    await (supabase.storage as any).createBucket(DOCS_BUCKET, { public: false })
-  } catch {}
-}
-
-async function maybeUploadDocs(d: DriverSession): Promise<DriverSession> {
-  if (!supabase) return d
-  if (!Array.isArray(d.docs) || d.docs.length === 0) return d
-
-  const hasData = d.docs.some(x => isDataImageUrl(x?.url))
-  if (!hasData) return d
-
-  await ensureDocsBucket()
-
-  const nextDocs: Array<{ name: string, url?: string }> = []
-  for (const item of d.docs) {
-    const name = String(item?.name || '').trim() || 'doc'
-    const url = typeof item?.url === 'string' ? item.url : undefined
-    if (!isDataImageUrl(url)) {
-      nextDocs.push({ name, url })
-      continue
-    }
-    const parsed = parseDataUrl(url)
-    if (!parsed) {
-      nextDocs.push({ name })
-      continue
-    }
-    const ext = extFromMime(parsed.mime)
-    const filePath = `drivers/${d.id}/${name}-${Date.now()}.${ext}`
-    try {
-      const bytes = Buffer.from(parsed.b64, 'base64')
-      const { error } = await (supabase.storage as any)
-        .from(DOCS_BUCKET)
-        .upload(filePath, bytes, { contentType: parsed.mime, upsert: true })
-      if (error) throw error
-      nextDocs.push({ name, url: `sb:${DOCS_BUCKET}/${filePath}` })
-    } catch (e: any) {
-      logger.warn('docs_upload_failed', { driverId: d.id, name, reason: String(e?.message || e || 'unknown') })
-      nextDocs.push({ name })
-    }
+// Doğrudan REST API ile Supabase erişimi
+async function supabaseRequest(table: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'UPSERT', data?: any, query?: string): Promise<any> {
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    console.log('Supabase credentials not found')
+    return null
   }
-  return { ...d, docs: nextDocs }
+  
+  let url = `${SUPABASE_URL}/rest/v1/${table}`
+  const headers: Record<string, string> = {
+    'apikey': SUPABASE_KEY,
+    'Authorization': `Bearer ${SUPABASE_KEY}`,
+    'Content-Type': 'application/json',
+  }
+  
+  if (method === 'UPSERT') {
+    headers['Prefer'] = 'resolution=merge-duplicates,return=representation'
+  } else if (method === 'POST' || method === 'PATCH') {
+    headers['Prefer'] = 'return=representation'
+  }
+  
+  if (query) {
+    url += '?' + query
+  }
+  
+  try {
+    const response = await fetch(url, {
+      method: method === 'UPSERT' ? 'POST' : method,
+      headers,
+      body: data ? JSON.stringify(data) : undefined
+    })
+    
+    if (!response.ok) {
+      const text = await response.text()
+      console.error('Supabase REST error:', response.status, text)
+      return null
+    }
+    
+    const text = await response.text()
+    if (!text) return null
+    return JSON.parse(text)
+  } catch (e) {
+    console.error('Supabase fetch error:', e)
+    return null
+  }
 }
 
-async function materializeDocUrls(docs?: Array<{ name: string, url?: string }>) {
-  if (!supabase) return docs
-  if (!Array.isArray(docs) || docs.length === 0) return docs
-  const out: Array<{ name: string, url?: string }> = []
-  for (const x of docs) {
-    const name = String(x?.name || '').trim() || 'doc'
-    const url = typeof x?.url === 'string' ? x.url : undefined
-    if (!url || !url.startsWith('sb:')) {
-      out.push({ name, url })
-      continue
-    }
-    const ref = url.slice(3)
-    const slash = ref.indexOf('/')
-    if (slash <= 0) {
-      out.push({ name })
-      continue
-    }
-    const bucket = ref.slice(0, slash)
-    const path = ref.slice(slash + 1)
-    try {
-      const { data, error } = await (supabase.storage as any).from(bucket).createSignedUrl(path, 10 * 60)
-      if (error) throw error
-      out.push({ name, url: data?.signedUrl })
-    } catch {
-      out.push({ name })
-    }
+// Demo sürücü verisi - SADECE ilk kurulumda kullanılır
+const DEMO_DRIVERS: DriverSession[] = [
+  {
+    id: 'drv_vedat',
+    name: 'vedat',
+    email: 'vedat@test.com',
+    password: '123456',
+    vehicleType: 'sedan',
+    vehicleModel: 'Araç',
+    licensePlate: '',
+    location: { lat: 0, lng: 0 },
+    available: false, // Varsayılan olarak OFFLINE
+    approved: true,
+  },
+  {
+    id: 'drv_fatih',
+    name: 'fatih',
+    email: 'fatih@test.com',
+    password: '123456',
+    vehicleType: 'sedan',
+    vehicleModel: 'Araç',
+    licensePlate: '',
+    location: { lat: 0, lng: 0 },
+    available: false, // Varsayılan olarak OFFLINE
+    approved: true,
   }
-  return out
-}
+]
 
 async function sbUpsertDriver(d: DriverSession) {
-  if (!supabase) return
-  try {
-    const { error } = await supabase.from('drivers').upsert({
-      id: d.id,
-      name: d.name,
-      email: d.email || null,
-      password_hash: d.passwordHash || null,
-      password_salt: d.passwordSalt || null,
-      vehicle_type: d.vehicleType,
-      vehicle_model: d.vehicleModel || null,
-      license_plate: d.licensePlate || null,
-      docs: d.docs || null,
-      location_lat: d.location.lat,
-      location_lng: d.location.lng,
-      available: d.available,
-      approved: d.approved,
-      rejected_reason: d.rejectedReason || null,
-    })
-    if (error) console.error('Supabase upsert error:', error.message)
-  } catch (e: any) {
-    console.error('Supabase unexpected error:', e?.message || e)
+  const data = {
+    id: d.id,
+    name: d.name,
+    email: d.email || null,
+    password_hash: d.passwordHash || null,
+    password_salt: d.passwordSalt || null,
+    vehicle_type: d.vehicleType,
+    vehicle_model: d.vehicleModel || null,
+    license_plate: d.licensePlate || null,
+    docs: d.docs || null,
+    location_lat: d.location.lat,
+    location_lng: d.location.lng,
+    available: d.available,
+    approved: d.approved,
+    rejected_reason: d.rejectedReason || null,
   }
+  
+  await supabaseRequest('drivers', 'UPSERT', data)
 }
 
 export async function saveDriver(d: DriverSession) {
-  const next = await maybeUploadDocs(d)
-  memory.set(next.id, next)
-  await sbUpsertDriver(next)
+  memory.set(d.id, d)
+  await sbUpsertDriver(d)
 }
 
 export async function getDriver(id: string): Promise<DriverSession | null> {
   if (memory.has(id)) return memory.get(id) || null
-  if (supabase) {
-    const { data } = await supabase.from('drivers').select('*').eq('id', id).limit(1)
-    const row = Array.isArray(data) && data[0]
-    if (row) {
-      const d: DriverSession = {
-        id: row.id,
-        name: row.name || 'Sürücü',
-        email: row.email || undefined,
-        passwordHash: row.password_hash || undefined,
-        passwordSalt: row.password_salt || undefined,
-        vehicleType: row.vehicle_type,
-        vehicleModel: row.vehicle_model || undefined,
-        licensePlate: row.license_plate || undefined,
-        docs: await materializeDocUrls(row.docs || undefined),
-        location: { lat: row.location_lat, lng: row.location_lng },
-        available: !!row.available,
-        approved: !!row.approved,
-        rejectedReason: row.rejected_reason || undefined,
-      }
-      memory.set(id, d)
-      return d
+  
+  // Supabase'den çek
+  const rows = await supabaseRequest('drivers', 'GET', null, `id=eq.${id}&limit=1`)
+  const row = Array.isArray(rows) ? rows[0] : null
+  
+  if (row) {
+    const d: DriverSession = {
+      id: row.id,
+      name: row.name || 'Sürücü',
+      email: row.email || undefined,
+      passwordHash: row.password_hash || undefined,
+      passwordSalt: row.password_salt || undefined,
+      vehicleType: row.vehicle_type,
+      vehicleModel: row.vehicle_model || undefined,
+      licensePlate: row.license_plate || undefined,
+      docs: row.docs || undefined,
+      location: { lat: row.location_lat || 0, lng: row.location_lng || 0 },
+      available: !!row.available,
+      approved: !!row.approved,
+      rejectedReason: row.rejected_reason || undefined,
     }
+    memory.set(id, d)
+    return d
   }
+  
   return null
-}
-
-async function ensureSeeds() {
-  // Test verisi (fake seed) oluşturma devre dışı bırakıldı
-  return
 }
 
 export async function getDriverByEmail(email: string): Promise<DriverSession | null> {
   const emailNorm = String(email).trim().toLowerCase()
+  
+  // Önce bellekte ara
   const mem = Array.from(memory.values()).find(d => (d.email || '').toLowerCase() === emailNorm)
   if (mem) return mem
-  if (supabase) {
-    const { data } = await supabase.from('drivers').select('*').eq('email', emailNorm)
-    const row = Array.isArray(data) && data[0]
-    if (row) {
-      const d: DriverSession = {
-        id: row.id,
-        name: row.name || 'Sürücü',
-        email: (row.email || undefined)?.toLowerCase(),
-        passwordHash: row.password_hash || undefined,
-        passwordSalt: row.password_salt || undefined,
-        vehicleType: row.vehicle_type,
-        vehicleModel: row.vehicle_model || undefined,
-        licensePlate: row.license_plate || undefined,
-        docs: await materializeDocUrls(row.docs || undefined),
-        location: { lat: row.location_lat, lng: row.location_lng },
-        available: !!row.available,
-        approved: !!row.approved,
-        rejectedReason: row.rejected_reason || undefined,
-      }
-      memory.set(d.id, d)
-      return d
+  
+  // Supabase'den çek
+  const rows = await supabaseRequest('drivers', 'GET', null, `email=eq.${encodeURIComponent(emailNorm)}&limit=1`)
+  const row = Array.isArray(rows) ? rows[0] : null
+  
+  if (row) {
+    const d: DriverSession = {
+      id: row.id,
+      name: row.name || 'Sürücü',
+      email: row.email || undefined,
+      passwordHash: row.password_hash || undefined,
+      passwordSalt: row.password_salt || undefined,
+      vehicleType: row.vehicle_type,
+      vehicleModel: row.vehicle_model || undefined,
+      licensePlate: row.license_plate || undefined,
+      docs: row.docs || undefined,
+      location: { lat: row.location_lat || 0, lng: row.location_lng || 0 },
+      available: !!row.available,
+      approved: !!row.approved,
+      rejectedReason: row.rejected_reason || undefined,
     }
+    memory.set(d.id, d)
+    return d
   }
+  
   return null
 }
 
 export async function listDriversByStatus(status: 'approved' | 'pending' | 'rejected' | 'all'): Promise<DriverSession[]> {
-  if (supabase) {
-    try {
-      await ensureSeeds()
-      let q = supabase.from('drivers').select('*')
-      if (status === 'approved') q = q.eq('approved', true)
-      else if (status === 'pending') q = q.eq('approved', false).is('rejected_reason', null)
-      else if (status === 'rejected') q = q.not('rejected_reason', 'is', null)
-      const { data, error } = await q
-      if (error) throw error
-      const arr = Array.isArray(data) ? data : []
-      const mapped = arr.map((row: any) => ({
-        id: row.id,
-        name: row.name || 'Sürücü',
-        email: row.email || undefined,
-        passwordHash: row.password_hash || undefined,
-        passwordSalt: row.password_salt || undefined,
-        vehicleType: row.vehicle_type,
-        vehicleModel: row.vehicle_model || undefined,
-        licensePlate: row.license_plate || undefined,
-        docs: row.docs || undefined,
-        location: { lat: row.location_lat, lng: row.location_lng },
-        available: !!row.available,
-        approved: !!row.approved,
-        rejectedReason: row.rejected_reason || undefined,
-      }))
-      const out: DriverSession[] = []
-      for (const d of mapped) {
-        out.push({ ...d, docs: await materializeDocUrls(d.docs) })
-      }
-      return out
-    } catch (e: any) {
-      logger.warn('drivers_list_fallback', { status, reason: String(e?.message || e || 'unknown') })
-      const fallback = Array.from(memory.values())
-      if (fallback.length) return fallback
-      return [
-        { id: 'drv_fatih', name: 'fatih', email: 'fatih@test.com', vehicleType: 'sedan', vehicleModel: 'Araç', licensePlate: '', docs: [{ name: 'license' }], location: { lat: 36.8969, lng: 30.7133 }, available: true, approved: true },
-        { id: 'drv_vedat', name: 'vedat', email: 'vedat@test.com', vehicleType: 'sedan', vehicleModel: 'Araç', licensePlate: '', docs: [{ name: 'license' }], location: { lat: 36.8969, lng: 30.7133 }, available: true, approved: true },
-      ]
+  let query = 'select=*'
+  
+  if (status === 'approved') {
+    query += '&approved=eq.true'
+  } else if (status === 'pending') {
+    query += '&approved=eq.false&rejected_reason=is.null'
+  } else if (status === 'rejected') {
+    query += '&rejected_reason=not.is.null'
+  }
+  
+  const rows = await supabaseRequest('drivers', 'GET', null, query)
+  
+  if (!Array.isArray(rows)) {
+    // Supabase çalışmıyorsa demo veri döndür
+    if (status === 'approved') {
+      return DEMO_DRIVERS
     }
+    return []
   }
-  let arr = Array.from(memory.values())
-  if (arr.length === 0) {
-    logger.warn('drivers_list_fallback', { status, reason: 'memory_empty' })
-    arr = [
-      { id: 'drv_fatih', name: 'fatih', email: 'fatih@test.com', vehicleType: 'sedan', vehicleModel: 'Araç', licensePlate: '', docs: [{ name: 'license' }], location: { lat: 36.8969, lng: 30.7133 }, available: true, approved: true },
-      { id: 'drv_vedat', name: 'vedat', email: 'vedat@test.com', vehicleType: 'sedan', vehicleModel: 'Araç', licensePlate: '', docs: [{ name: 'license' }], location: { lat: 36.8969, lng: 30.7133 }, available: true, approved: true },
-    ]
+  
+  return rows.map((row: any) => ({
+    id: row.id,
+    name: row.name || 'Sürücü',
+    email: row.email || undefined,
+    passwordHash: row.password_hash || undefined,
+    passwordSalt: row.password_salt || undefined,
+    vehicleType: row.vehicle_type,
+    vehicleModel: row.vehicle_model || undefined,
+    licensePlate: row.license_plate || undefined,
+    docs: row.docs || undefined,
+    location: { lat: row.location_lat || 0, lng: row.location_lng || 0 },
+    available: !!row.available,
+    approved: !!row.approved,
+    rejectedReason: row.rejected_reason || undefined,
+  }))
+}
+
+export async function approveDriver(id: string): Promise<void> {
+  await supabaseRequest('drivers', 'PATCH', { approved: true }, `id=eq.${id}`)
+}
+
+export async function rejectDriver(id: string, reason?: string): Promise<void> {
+  await supabaseRequest('drivers', 'PATCH', { approved: false, rejected_reason: reason || 'Rejected' }, `id=eq.${id}`)
+}
+
+export async function updateDriverPartial(id: string, data: Partial<DriverSession>): Promise<void> {
+  const updateData: any = {}
+  if (data.name) updateData.name = data.name
+  if (data.vehicleModel) updateData.vehicle_model = data.vehicleModel
+  if (data.licensePlate) updateData.license_plate = data.licensePlate
+  if (data.location) {
+    updateData.location_lat = data.location.lat
+    updateData.location_lng = data.location.lng
   }
-  if (status === 'approved') return arr.filter(d => d.approved)
-  if (status === 'pending') return arr.filter(d => !d.approved && !d.rejectedReason)
-  if (status === 'rejected') return arr.filter(d => !!d.rejectedReason)
-  return arr
+  if (typeof data.available === 'boolean') updateData.available = data.available
+  
+  await supabaseRequest('drivers', 'PATCH', updateData, `id=eq.${id}`)
 }
 
-export async function approveDriver(id: string) {
-  const d = (await getDriver(id)) || null
-  if (!d) return
-  d.approved = true
-  d.rejectedReason = undefined
-  await saveDriver(d)
-}
-
-export async function rejectDriver(id: string, reason?: string) {
-  const d = (await getDriver(id)) || null
-  if (!d) return
-  d.approved = false
-  d.rejectedReason = reason || 'unspecified'
-  await saveDriver(d)
-}
-
-export async function updateDriverPartial(id: string, patch: Partial<DriverSession>) {
-  const d = (await getDriver(id)) || null
-  if (!d) return
-  const next: DriverSession = { ...d, ...patch, location: patch.location || d.location }
-  await saveDriver(next)
-}
-
-export async function deleteDriver(id: string) {
-  memory.delete(id)
-  if (supabase) {
-    await supabase.from('drivers').delete().eq('id', id)
-  }
+export async function deleteDriver(id: string): Promise<void> {
+  await supabaseRequest('drivers', 'DELETE', null, `id=eq.${id}`)
 }
 
 export async function diagnoseSupabase() {
-  const connected = !!supabase
-  const hasUrl = !!process.env.SUPABASE_URL
-  const hasService = !!process.env.SUPABASE_SERVICE_ROLE_KEY
-  const hasAnon = !!process.env.SUPABASE_ANON_KEY
-  if (!connected) return { connected: false, hasUrl, hasService, hasAnon }
-  try {
-    const { data, error } = await supabase.from('drivers').select('id', { count: 'exact', head: false }).limit(1)
-    if (error) return { connected: true, canQuery: false, error: String(error.message || error) }
-    const rows = Array.isArray(data) ? data.length : 0
-    return { connected: true, canQuery: true, rows, hasUrl, hasService, hasAnon }
-  } catch (e: any) {
-    return { connected: true, canQuery: false, error: String(e?.message || e), hasUrl, hasService, hasAnon }
+  const connected = !!(SUPABASE_URL && SUPABASE_KEY)
+  
+  let canQuery = false
+  let error = null
+  
+  if (connected) {
+    try {
+      const result = await supabaseRequest('drivers', 'GET', null, 'limit=1')
+      canQuery = Array.isArray(result)
+    } catch (e: any) {
+      error = e.message || String(e)
+    }
+  }
+  
+  return {
+    connected,
+    canQuery,
+    error,
+    hasUrl: !!SUPABASE_URL,
+    hasService: !!getEnv('SUPABASE_SERVICE_ROLE_KEY'),
+    hasAnon: !!getEnv('SUPABASE_ANON_KEY'),
   }
 }

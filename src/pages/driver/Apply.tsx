@@ -3,18 +3,23 @@ import { Button } from '@/components/ui/Button'
 import OpenStreetMap from '@/components/OpenStreetMap'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/authStore'
-import { useDriverStore } from '@/stores/driverStore'
 import { useNavigate } from 'react-router-dom'
 import { DEFAULT_CENTER } from '@/config/env'
+import type { User as UserType } from '@/types'
+import { Car, User, ArrowLeft, FileText, Upload, MapPin } from 'lucide-react'
 
 export const DriverApply: React.FC = () => {
   const [form, setForm] = useState({ name: '', email: '', password: '', vehicleType: 'sedan', vehicleModel: '', licensePlate: '', lat: 0, lng: 0 })
   const [docs, setDocs] = useState<Record<string, string>>({})
   const [locating, setLocating] = useState(true)
-  const requiredDocs = ['license','vehicle_registration','insurance','profile_photo']
+  const requiredDocs = [
+    { key: 'license', label: 'Sürücü Belgesi' },
+    { key: 'vehicle_registration', label: 'Ruhsat' },
+    { key: 'insurance', label: 'Sigorta' },
+    { key: 'profile_photo', label: 'Profil Fotoğrafı' }
+  ]
   const navigate = useNavigate()
   const { setUser, setTokens } = useAuthStore.getState()
-  const { register, refreshApproval } = useDriverStore()
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -26,7 +31,6 @@ export const DriverApply: React.FC = () => {
         () => {
           toast.error('Konum alınamadı, lütfen haritadan seçin')
           setLocating(false)
-          // Fallback to default only if GPS fails
           setForm(prev => ({ ...prev, lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng }))
         },
         { enableHighAccuracy: true }
@@ -35,7 +39,7 @@ export const DriverApply: React.FC = () => {
       setLocating(false)
     }
   }, [])
-  
+
   const onFile = (name: string, file?: File) => {
     if (!file) return
     const okType = /image\/(jpeg|png)/.test(file.type)
@@ -45,78 +49,227 @@ export const DriverApply: React.FC = () => {
       const dataUrl = String(reader.result || '')
       if (!dataUrl.startsWith('data:image/')) { toast.error('Görsel okunamadı'); return }
       setDocs(prev => ({ ...prev, [name]: dataUrl }))
-      toast.success(`${name} yüklendi`)
+      toast.success('Belge yüklendi')
     }
     reader.onerror = () => toast.error('Dosya okunamadı')
     reader.readAsDataURL(file)
   }
+
   const submit = async () => {
     if (!form.name) { toast.error('Ad Soyad gerekli'); return }
-    for (const n of requiredDocs) { if (!docs[n]) { toast.error(`Eksik belge: ${n}`); return } }
+    for (const n of requiredDocs) { if (!docs[n.key]) { toast.error(`Eksik belge: ${n.label}`); return } }
     try {
       if (!form.email) { toast.error('E-posta gerekli'); return }
       if (!form.password || form.password.length < 6) { toast.error('Şifre en az 6 karakter olmalı'); return }
-      const payload = { name: form.name, email: form.email, password: form.password, vehicleType: form.vehicleType, vehicleModel: form.vehicleModel, licensePlate: form.licensePlate, docs: requiredDocs.map(n=>({ name: n, url: docs[n] })), location: { lat: form.lat, lng: form.lng } }
+      const payload = {
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        vehicleType: form.vehicleType,
+        vehicleModel: form.vehicleModel,
+        licensePlate: form.licensePlate,
+        docs: requiredDocs.map(n => ({ name: n.key, url: docs[n.key] })),
+        location: { lat: form.lat, lng: form.lng }
+      }
       const res = await fetch('/api/drivers/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const j = await res.json()
       if (!res.ok || !j.success) {
         if (j.error === 'docs_required') throw new Error('Lütfen tüm belgeleri eksiksiz yükleyin')
-        if (j.error === 'invalid_payload') throw new Error('Form verileri eksik veya geçersiz (Ad, E-posta, Şifre, Araç Tipi kontrol edin)')
+        if (j.error === 'invalid_payload') throw new Error('Form verileri eksik veya geçersiz')
         throw new Error(j.error || 'Başvuru sırasında sunucu hatası oluştu')
       }
       toast.success('Başvurunuz başarıyla alındı, yönetici onayı bekleniyor')
       const driverId = j.data?.id as string
       if (driverId) {
-        setUser({ id: driverId, email: form.email, name: form.name || 'Sürücü', phone: '', role: 'driver', isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as any)
+        const newUser: UserType = {
+          id: driverId,
+          email: form.email,
+          name: form.name || 'Sürücü',
+          phone: '',
+          role: 'driver',
+          isVerified: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+        setUser(newUser)
         setTokens('mock-token', 'mock-refresh')
-        // Gereksiz register API çağrısı kaldırıldı
         navigate('/driver/dashboard')
       }
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Başvuru başarısız') }
   }
+
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">Yeni Sürücü Başvurusu</h1>
-        <div className="bg-white rounded-xl shadow-lg p-6 space-y-4">
-          <input className="border rounded-lg px-4 py-3 w-full" placeholder="Ad Soyad" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} />
-          <input className="border rounded-lg px-4 py-3 w-full" placeholder="E-posta" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} />
-          <input className="border rounded-lg px-4 py-3 w-full" placeholder="Şifre (en az 6 karakter)" type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} />
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <select className="border rounded-lg px-4 py-3" value={form.vehicleType} onChange={e=>setForm({...form,vehicleType:e.target.value as any})}>
-              <option value="sedan">Sedan</option>
-              <option value="suv">SUV</option>
-              <option value="van">Van</option>
-              <option value="luxury">Lüks</option>
-            </select>
-            <input className="border rounded-lg px-4 py-3" placeholder="Araç Modeli" value={form.vehicleModel} onChange={e=>setForm({...form,vehicleModel:e.target.value})} />
-            <input className="border rounded-lg px-4 py-3" placeholder="Plaka" value={form.licensePlate} onChange={e=>setForm({...form,licensePlate:e.target.value})} />
+    <div className="min-h-screen bg-gray-900 flex flex-col">
+      {/* Header */}
+      <div className="p-4 flex items-center justify-between border-b border-gray-800">
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+        >
+          <ArrowLeft className="h-5 w-5" />
+          <span>Ana Sayfa</span>
+        </button>
+        <div className="flex items-center gap-2">
+          <Car className="h-6 w-6 text-green-500" />
+          <span className="text-white font-bold">GetTransfer</span>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto py-8">
+        <div className="max-w-3xl mx-auto px-4">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <User className="h-10 w-10 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-white">Yeni Sürücü Başvurusu</h1>
+            <p className="mt-2 text-gray-400">Sürücü olarak çalışmak için başvurun</p>
           </div>
-          <div className="border rounded-lg p-3">
-            <p className="text-sm text-gray-700 mb-2">Belgeler (JPEG/PNG)</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {requiredDocs.map(n => (
-                <div key={n} className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700">{n}</label>
-                  <input type="file" accept="image/jpeg,image/png" onChange={(e)=>onFile(n, e.target.files?.[0])} />
-                  {docs[n] && <img src={docs[n]} alt={n} className="h-20 rounded border" />}
-                </div>
-              ))}
+
+          <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 space-y-5">
+            {/* Personal Info */}
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <User className="h-5 w-5 text-green-500" />
+                Kişisel Bilgiler
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input
+                  className="px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="Ad Soyad"
+                  value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                />
+                <input
+                  className="px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="E-posta"
+                  type="email"
+                  value={form.email}
+                  onChange={e => setForm({ ...form, email: e.target.value })}
+                />
+              </div>
+              <input
+                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                placeholder="Şifre (en az 6 karakter)"
+                type="password"
+                value={form.password}
+                onChange={e => setForm({ ...form, password: e.target.value })}
+              />
+            </div>
+
+            {/* Vehicle Info */}
+            <div className="space-y-4 pt-4 border-t border-gray-700">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Car className="h-5 w-5 text-green-500" />
+                Araç Bilgileri
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <select
+                  className="px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  value={form.vehicleType}
+                  onChange={e => setForm({ ...form, vehicleType: e.target.value as 'sedan' | 'suv' | 'van' | 'luxury' })}
+                >
+                  <option value="sedan">Sedan</option>
+                  <option value="suv">SUV</option>
+                  <option value="van">Van</option>
+                  <option value="luxury">Lüks</option>
+                </select>
+                <input
+                  className="px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="Araç Modeli"
+                  value={form.vehicleModel}
+                  onChange={e => setForm({ ...form, vehicleModel: e.target.value })}
+                />
+                <input
+                  className="px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="Plaka"
+                  value={form.licensePlate}
+                  onChange={e => setForm({ ...form, licensePlate: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {/* Documents */}
+            <div className="space-y-4 pt-4 border-t border-gray-700">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <FileText className="h-5 w-5 text-green-500" />
+                Belgeler
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {requiredDocs.map(doc => (
+                  <div key={doc.key} className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-300">{doc.label}</label>
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        onChange={(e) => onFile(doc.key, e.target.files?.[0])}
+                        className="hidden"
+                        id={`file-${doc.key}`}
+                      />
+                      <label
+                        htmlFor={`file-${doc.key}`}
+                        className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-gray-400 cursor-pointer hover:bg-gray-600 transition-colors"
+                      >
+                        <Upload className="h-5 w-5" />
+                        <span>{docs[doc.key] ? 'Değiştir' : 'Yükle'}</span>
+                      </label>
+                    </div>
+                    {docs[doc.key] && (
+                      <img src={docs[doc.key]} alt={doc.label} className="h-16 rounded-lg border border-gray-600" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Location */}
+            <div className="space-y-4 pt-4 border-t border-gray-700">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-green-500" />
+                Konum
+              </h2>
+              <div className="h-48 rounded-lg overflow-hidden border border-gray-600 relative">
+                {locating && (
+                  <div className="absolute inset-0 bg-gray-800/80 z-10 flex items-center justify-center">
+                    <span className="text-sm text-gray-400">Konum alınıyor...</span>
+                  </div>
+                )}
+                <OpenStreetMap
+                  center={form.lat ? { lat: form.lat, lng: form.lng } : DEFAULT_CENTER}
+                  customerLocation={form.lat ? { lat: form.lat, lng: form.lng } : DEFAULT_CENTER}
+                  drivers={[]}
+                  onMapClick={(loc) => setForm({ ...form, lat: loc.lat, lng: loc.lng })}
+                />
+              </div>
+              <p className="text-xs text-gray-500">Konumunuzu doğrulamak için haritada tıklayarak seçin</p>
+            </div>
+
+            {/* Submit */}
+            <div className="pt-4">
+              <Button
+                onClick={submit}
+                disabled={locating || !form.lat}
+                className="w-full bg-green-600 hover:bg-green-700 py-3 text-lg"
+              >
+                Başvuruyu Gönder
+              </Button>
             </div>
           </div>
-          <div className="mt-2 h-64 rounded-lg overflow-hidden border border-gray-200 relative">
-            {locating && (
-              <div className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center">
-                <span className="text-sm text-gray-600">Konum alınıyor...</span>
-              </div>
-            )}
-            <OpenStreetMap center={form.lat ? { lat: form.lat, lng: form.lng } : DEFAULT_CENTER} customerLocation={form.lat ? { lat: form.lat, lng: form.lng } : DEFAULT_CENTER} drivers={[]} onMapClick={(loc)=>setForm({...form,lat:loc.lat,lng:loc.lng})} />
-          </div>
-          <div className="flex justify-end">
-            <Button onClick={submit} disabled={locating || !form.lat}>Başvuruyu Gönder</Button>
+
+          {/* Back to Login */}
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => navigate('/driver/login')}
+              className="text-gray-400 hover:text-white transition-colors"
+            >
+              Zaten hesabınız var mı? Giriş yapın
+            </button>
           </div>
         </div>
       </div>
     </div>
   )
 }
+
+export default DriverApply

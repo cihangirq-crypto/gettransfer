@@ -4,34 +4,23 @@ import { useAuthStore } from '@/stores/authStore'
 import { useBookingStore } from '@/stores/bookingStore'
 import OpenStreetMap from '@/components/OpenStreetMap'
 import { Button } from '@/components/ui/Button'
+import { DriverLayout } from '@/components/DriverLayout'
 import { io as ioClient, type Socket } from 'socket.io-client'
-import { Car, User, MapPin, Star, TrendingUp, Clock, CheckCircle, Settings, Camera, FileText, DollarSign, AlertCircle } from 'lucide-react'
+import { MapPin, Phone, Navigation, CheckCircle, XCircle, Clock, Coffee } from 'lucide-react'
 import { toast } from 'sonner'
 import { DEFAULT_CENTER } from '@/config/env'
-import { currencySymbol } from '@/utils/pricing'
 
 export const DriverDashboard = () => {
-  const { me, requests, register, refreshRequests, accept, updateLocation, setAvailable, refreshApproval, earnings, fetchEarnings, submitComplaint, approved, updateProfile, isConnected } = useDriverStore()
+  const { me, requests, register, refreshRequests, accept, updateLocation, setAvailable, refreshApproval, earnings, fetchEarnings, approved } = useDriverStore()
   const { user } = useAuthStore()
   const { confirmPickup, appendRoutePoint, stopRouteRecordingAndSave, updateBookingStatus, saveRouteProgress } = useBookingStore()
-  
-  const [form, setForm] = useState({ id: '', name: '', vehicleType: 'sedan', lat: 0, lng: 0 })
-  const [locating, setLocating] = useState(true)
+
   const [locationSource, setLocationSource] = useState<'gps' | 'ip' | 'manual' | 'none'>('none')
-  const [profilePhoto, setProfilePhoto] = useState<string | null>(null)
-  const [vehicleModelInput, setVehicleModelInput] = useState('')
-  const [vehicleImages, setVehicleImages] = useState<Array<{full:string, thumb:string}>>([])
-  const [primaryVehicleImage, setPrimaryVehicleImage] = useState<string | null>(null)
-  const [licensePlate, setLicensePlate] = useState('')
-  const vehicleFileRef = useRef<HTMLInputElement | null>(null)
-  
+
   type RideRequest = { id: string; pickup: { lat:number, lng:number, address:string }; dropoff: { lat:number, lng:number, address:string }; vehicleType: 'sedan'|'suv'|'van'|'luxury' }
   const [selectedRequest, setSelectedRequest] = useState<RideRequest | null>(null)
-  const [watchId, setWatchId] = useState<number | null>(null)
   const [activeBooking, setActiveBooking] = useState<import('@/types').Booking | null>(null)
   const [customerLiveLocation, setCustomerLiveLocation] = useState<{ lat: number, lng: number } | null>(null)
-  const [stats, setStats] = useState({ todayTrips: 0, weeklyTrips: 0, avgRating: 4.8, totalEarnings: 0 })
-  const [installEvt, setInstallEvt] = useState<any>(null)
   const bookingSocketRef = useRef<Socket | null>(null)
 
   const calcMeters = (a?: { lat: number, lng: number } | null, b?: { lat: number, lng: number } | null) => {
@@ -46,17 +35,10 @@ export const DriverDashboard = () => {
   }
   const metersToPickup = activeBooking ? calcMeters(me?.location, activeBooking.pickupLocation) : null
   const metersToDropoff = activeBooking ? calcMeters(me?.location, activeBooking.dropoffLocation) : null
-  const nearCustomer = customerLiveLocation ? calcMeters(me?.location, customerLiveLocation) : null
-  const nearCustomerNotifiedRef = useRef(false)
 
   useEffect(() => { if (me) refreshRequests() }, [me, refreshRequests])
 
-  useEffect(() => {
-    const handler = (e: any) => { e.preventDefault(); setInstallEvt(e) }
-    window.addEventListener('beforeinstallprompt', handler as any)
-    return () => window.removeEventListener('beforeinstallprompt', handler as any)
-  }, [])
-  
+  // Sync driver data - Giriş yaptığında otomatik ONLINE yap
   useEffect(() => {
     const sync = async () => {
       if (user && user.role === 'driver' && (!me || me.id !== user.id)) {
@@ -64,85 +46,91 @@ export const DriverDashboard = () => {
           const res = await fetch(`/api/drivers/${user.id}`)
           const j = await res.json()
           if (res.ok && j.success && j.data) {
-            setForm(f => ({ ...f, name: j.data.name || f.name }))
-            setAvailable(!!j.data.available)
-            setStats(s => ({ ...s }))
-            // Race condition önlemek için eğer GPS zaten çalışıyorsa (0,0 değilse) sunucudan gelen konumu ezme
+            // Sürücü varsa, otomatik online yap
             const serverLoc = j.data.location
             const currentLoc = useDriverStore.getState().me?.location
             const finalLoc = (currentLoc && (currentLoc.lat !== 0 || currentLoc.lng !== 0)) ? currentLoc : serverLoc
 
-            useDriverStore.setState({ me: { id: j.data.id, name: j.data.name || 'Sürücü', vehicleType: j.data.vehicleType || 'sedan', location: finalLoc, available: j.data.available } })
-            try { useDriverStore.getState().startRealtime() } catch {}
+            useDriverStore.setState({
+              me: {
+                id: j.data.id,
+                name: j.data.name || 'Sürücü',
+                vehicleType: j.data.vehicleType || 'sedan',
+                location: finalLoc,
+                available: true // Otomatik ONLINE
+              }
+            })
+
+            // Sunucuda da online yap
+            try {
+              await fetch(`/api/drivers/${j.data.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ available: true })
+              })
+            } catch { /* ignore */ }
+
+            try { useDriverStore.getState().startRealtime() } catch { /* ignore */ }
           } else {
-            await register({ id: user.id, name: user.name || 'Sürücü', vehicleType: 'sedan', location: { lat: form.lat, lng: form.lng }, available: true })
+            await register({ id: user.id, name: user.name || 'Sürücü', vehicleType: 'sedan', location: { lat: 0, lng: 0 }, available: true })
           }
         } catch {
-          try { await register({ id: user.id, name: user.name || 'Sürücü', vehicleType: 'sedan', location: { lat: form.lat, lng: form.lng }, available: true }) } catch {}
+          try { await register({ id: user.id, name: user.name || 'Sürücü', vehicleType: 'sedan', location: { lat: 0, lng: 0 }, available: true }) } catch { /* ignore */ }
         }
       }
     }
     sync()
-  }, [me, user])
-  
+  }, [me, user, register])
+
   useEffect(() => {
-    const interval = setInterval(() => { if (me) refreshRequests() }, 5000)
+    const interval = setInterval(() => { if (me) refreshRequests() }, 3000) // 3 saniyede bir kontrol
     return () => clearInterval(interval)
   }, [me, refreshRequests])
-  
-  // Location optimization refs
-  const lastLocRef = useRef<{lat:number, lng:number, time:number}|null>(null)
-  const gpsAttemptedRef = useRef(false)
 
-  // IP bazlı konum alma fonksiyonu
+  // Location tracking
+  const lastLocRef = useRef<{lat:number, lng:number, time:number}|null>(null)
+
   const fetchIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
     try {
       const res = await fetch('https://ipapi.co/json/')
       if (res.ok) {
         const data = await res.json()
-        if (data.latitude && data.longitude) {
-          return { lat: data.latitude, lng: data.longitude }
-        }
+        if (data.latitude && data.longitude) return { lat: data.latitude, lng: data.longitude }
       }
-    } catch {}
-    // Alternatif API
+    } catch { /* ignore */ }
     try {
       const res = await fetch('https://ip-api.com/json/')
       if (res.ok) {
         const data = await res.json()
-        if (data.lat && data.lon) {
-          return { lat: data.lat, lng: data.lon }
-        }
+        if (data.lat && data.lon) return { lat: data.lat, lng: data.lon }
       }
-    } catch {}
+    } catch { /* ignore */ }
     return null
   }
 
   useEffect(() => {
     if (!me?.id) return
-    
+
     let watchIdLocal: number | null = null
     let ipLocationAttempted = false
 
-    // Önce GPS dene
     if (navigator.geolocation) {
       watchIdLocal = navigator.geolocation.watchPosition(
         (p) => {
-          setLocating(false)
           setLocationSource('gps')
-          
+
           const newLat = p.coords.latitude
           const newLng = p.coords.longitude
           const now = Date.now()
-          
+
           let shouldUpdate = false
-          
+
           if (!lastLocRef.current) {
             shouldUpdate = true
           } else {
             const { lat: oldLat, lng: oldLng, time: oldTime } = lastLocRef.current
             const timeDiff = now - oldTime
-            
+
             const R = 6371e3
             const φ1 = oldLat * Math.PI/180
             const φ2 = newLat * Math.PI/180
@@ -153,7 +141,7 @@ export const DriverDashboard = () => {
                       Math.sin(Δλ/2) * Math.sin(Δλ/2)
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
             const dist = R * c
-            
+
             if (dist > 10 || timeDiff > 10000) {
               shouldUpdate = true
             }
@@ -167,71 +155,48 @@ export const DriverDashboard = () => {
         },
         async (err) => {
           console.warn('GPS hatası:', err.message)
-          gpsAttemptedRef.current = true
-          
-          // GPS başarısız olursa IP bazlı konum dene
+
           if (!ipLocationAttempted) {
             ipLocationAttempted = true
-            setLocating(true)
             toast.info('GPS kullanılamıyor, IP bazlı konum aranıyor...')
-            
+
             const ipLoc = await fetchIpLocation()
             if (ipLoc) {
-              setLocating(false)
               setLocationSource('ip')
               updateLocation(ipLoc)
-              toast.success(`Yaklaşık konumunuz bulundu (${ipLoc.lat.toFixed(2)}, ${ipLoc.lng.toFixed(2)}). Haritada tıklayarak tam konumunuzu seçebilirsiniz.`)
+              toast.success('Yaklaşık konum bulundu!')
             } else {
-              setLocating(false)
               setLocationSource('none')
-              toast.warning('Konum bulunamadı. Lütfen haritada tıklayarak konumunuzu seçin.')
+              toast.warning('Konum bulunamadı. Haritada tıklayarak seçin.')
             }
           }
         },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       ) as unknown as number
-      setWatchId(watchIdLocal)
     } else {
-      // Geolocation desteklenmiyor, IP bazlı dene
       (async () => {
         ipLocationAttempted = true
-        setLocating(true)
         toast.info('GPS desteklenmiyor, IP bazlı konum aranıyor...')
-        
+
         const ipLoc = await fetchIpLocation()
         if (ipLoc) {
-          setLocating(false)
           setLocationSource('ip')
           updateLocation(ipLoc)
-          toast.success(`Yaklaşık konumunuz bulundu. Haritada tıklayarak tam konumunuzu seçebilirsiniz.`)
         } else {
-          setLocating(false)
           setLocationSource('none')
-          toast.warning('Konum bulunamadı. Lütfen haritada tıklayarak konumunuzu seçin.')
+          toast.warning('Konum bulunamadı. Haritada tıklayarak seçin.')
         }
       })()
     }
-    
-    return () => { 
-      try { 
-        if (watchIdLocal) navigator.geolocation.clearWatch(watchIdLocal) 
-      } catch {} 
+
+    return () => {
+      try {
+        if (watchIdLocal) navigator.geolocation.clearWatch(watchIdLocal)
+      } catch { /* ignore */ }
     }
-  }, [me?.id])
-  
-  useEffect(() => { if (me) { refreshApproval(); fetchEarnings() } }, [me])
-  useEffect(() => {
-    if (!me) return
-    let alive = true
-    const tick = async () => {
-      if (!alive) return
-      try { await refreshApproval() } catch {}
-      // Always keep checking approval status periodically, not just when unapproved
-      if (alive) setTimeout(tick, 5000)
-    }
-    setTimeout(tick, 1000)
-    return () => { alive = false }
-  }, [me]) // Removed 'approved' dependency to prevent loop/stale closure issues
+  }, [me?.id, updateLocation, appendRoutePoint])
+
+  useEffect(() => { if (me) { refreshApproval(); fetchEarnings() } }, [me, refreshApproval, fetchEarnings])
 
   useEffect(() => {
     if (!activeBooking) return
@@ -239,14 +204,15 @@ export const DriverDashboard = () => {
       saveRouteProgress(activeBooking.id)
     }, 5000)
     return () => clearInterval(iv)
-  }, [activeBooking])
+  }, [activeBooking, saveRouteProgress])
 
+  // Socket for customer location
   useEffect(() => {
     const b = activeBooking
     if (!b?.id) {
       setCustomerLiveLocation(null)
       if (bookingSocketRef.current) {
-        try { bookingSocketRef.current.disconnect() } catch {}
+        try { bookingSocketRef.current.disconnect() } catch { /* ignore */ }
         bookingSocketRef.current = null
       }
       return
@@ -257,26 +223,27 @@ export const DriverDashboard = () => {
     s.on('connect', () => {
       s.emit('booking:join', { bookingId: b.id })
     })
-    s.on('customer:update', (ev: any) => {
+    s.on('customer:update', (ev: { bookingId?: string; location?: { lat: number; lng: number } }) => {
       if (ev?.bookingId !== b.id) return
       if (ev?.location && typeof ev.location.lat === 'number' && typeof ev.location.lng === 'number') {
         setCustomerLiveLocation(ev.location)
       }
     })
-    s.on('booking:update', (next: any) => {
+    s.on('booking:update', (next: { id?: string; status?: string }) => {
       if (next?.id !== b.id) return
-      setActiveBooking(next)
+      setActiveBooking(prev => prev ? { ...prev, ...next } : null)
     })
     fetch(`/api/bookings/${b.id}/customer-location`).then(r => r.json()).then(j => {
       if (j?.success && j?.data && typeof j.data.lat === 'number' && typeof j.data.lng === 'number') setCustomerLiveLocation(j.data)
-    }).catch(() => {})
+    }).catch(() => { /* ignore */ })
     return () => {
-      try { s.emit('booking:leave', { bookingId: b.id }) } catch {}
+      try { s.emit('booking:leave', { bookingId: b.id }) } catch { /* ignore */ }
       s.disconnect()
       bookingSocketRef.current = null
     }
   }, [activeBooking?.id])
 
+  // Poll active booking
   useEffect(() => {
     if (!me) return
     const poll = async () => {
@@ -285,25 +252,22 @@ export const DriverDashboard = () => {
         const res = await fetch(`/api/bookings/by-driver/${me.id}`)
         const j = await res.json()
         if (res.ok && j.success && Array.isArray(j.data)) {
-          // Find any active booking (accepted, en_route, arrived, in_progress)
-          // Filter out completed/cancelled
-          const active = (j.data as import('@/types').Booking[]).find(b => 
+          const active = (j.data as import('@/types').Booking[]).find(b =>
             ['accepted', 'driver_en_route', 'driver_arrived', 'in_progress'].includes(b.status)
           ) || null
-          
-          // Only update if ID changed or status changed to avoid re-renders
+
           if (active?.id !== activeBooking?.id || active?.status !== activeBooking?.status) {
              setActiveBooking(active || null)
           }
         }
-      } catch {}
+      } catch { /* ignore */ }
     }
     poll()
-    const iv = setInterval(poll, 3000) // Poll more frequently for faster sync
+    const iv = setInterval(poll, 3000)
     return () => clearInterval(iv)
   }, [me?.id, activeBooking?.id, activeBooking?.status])
 
-  // Audio for notifications
+  // Audio notifications
   const notificationAudio = useRef<HTMLAudioElement | null>(null)
   const prevRequestsLength = useRef(0)
 
@@ -313,611 +277,283 @@ export const DriverDashboard = () => {
 
   useEffect(() => {
     if (requests.length > prevRequestsLength.current) {
-      // New request received
-      toast.success('Yeni yolculuk talebi!', { duration: 5000 })
+      toast.success('🔔 Yeni yolculuk isteği!', { duration: 10000 })
       try {
-        notificationAudio.current?.play().catch(() => {})
+        notificationAudio.current?.play().catch(() => { /* ignore */ })
         if (navigator.vibrate) navigator.vibrate([200, 100, 200])
-      } catch {}
+      } catch { /* ignore */ }
     }
     prevRequestsLength.current = requests.length
-    
+
     if (!selectedRequest && requests.length > 0) {
       setSelectedRequest(requests[0])
     }
-  }, [requests])
+  }, [requests, selectedRequest])
 
-  useEffect(() => {
-    if (me) {
-      const saved = localStorage.getItem(`driver_profile_${me.id}`)
-      if (saved) {
-        try {
-          const j = JSON.parse(saved)
-          setProfilePhoto(j.profilePhoto || null)
-          setVehicleImages(j.vehicleImages || [])
-          setVehicleModelInput(j.vehicleModel || '')
-          setPrimaryVehicleImage(j.primaryVehicleImage || null)
-          setLicensePlate(j.licensePlate || '')
-          setForm(f => ({ ...f, name: j.name || f.name }))
-        } catch {}
-      }
-    }
-  }, [me])
+  const hasValidLocation = me?.location && (me.location.lat !== 0 || me.location.lng !== 0)
 
-  useEffect(() => {
-    if (!me) return
-    const applyDefaults = async () => {
-      const key = `driver_profile_${me.id}`
-      let prev: any = {}
-      try { prev = JSON.parse(localStorage.getItem(key) || '{}') } catch {}
-      const next: any = { ...prev }
-      if (!me.licensePlate || !prev.licensePlate) next.licensePlate = '34 ABC 987'
-      if (!me.vehicleModel || !prev.vehicleModel) next.vehicleModel = 'Toyota Corolla Sedan'
-      if (!prev.name) next.name = me.name || 'Sürücü'
-      const carUrl = 'https://trae-api-sg.mchost.guru/api/ide/v1/text_to_image?prompt=high%20quality%20photo%20of%20silver%20sedan%20car%2C%203%2F4%20front%20view%2C%20city%20street%2C%20daylight%2C%20realistic%20details&image_size=landscape_16_9'
-      if (!prev.primaryVehicleImage) next.primaryVehicleImage = carUrl
-      if (!Array.isArray(prev.vehicleImages) || prev.vehicleImages.length === 0) next.vehicleImages = [{ full: carUrl, thumb: carUrl }]
-      try { localStorage.setItem(key, JSON.stringify(next)) } catch {}
-      setVehicleModelInput(next.vehicleModel || '')
-      setPrimaryVehicleImage(next.primaryVehicleImage || null)
-      setVehicleImages(next.vehicleImages || [])
-      setLicensePlate(next.licensePlate || '')
-      setForm(f => ({ ...f, name: next.name || f.name }))
-      try { await updateProfile({ name: next.name, vehicleModel: next.vehicleModel, licensePlate: next.licensePlate }) } catch {}
-    }
-    applyDefaults()
-  }, [me])
-
-  useEffect(() => {
-    if (typeof nearCustomer !== 'number') return
-    if (nearCustomer <= 50) {
-      if (!nearCustomerNotifiedRef.current) {
-        nearCustomerNotifiedRef.current = true
-        toast.success('Müşteri ile aynı konumdasınız.')
-      }
-    } else {
-      nearCustomerNotifiedRef.current = false
-    }
-  }, [nearCustomer])
-
-  useEffect(() => {
-    if (earnings) {
-      setStats(s => ({ ...s, totalEarnings: earnings.monthly || 0 }))
-    }
-  }, [earnings])
-
-  const handleImageUpload = async (file: File, type: 'profile' | 'vehicle') => {
-    if (!file) return
-    const okType = /image\/(jpeg|png)/.test(file.type)
-    if (!okType) {
-      toast.error('JPEG/PNG yükleyin')
+  // Mola/Online toggle
+  const toggleAvailability = async () => {
+    if (!hasValidLocation) {
+      toast.error('Konumunuz yüklenmeden müsait olamazsınız')
       return
     }
-    const img = await readImage(file)
-    if (type === 'profile' && (img.width < 200 || img.height < 200)) {
-      toast.error('Profil resmi en az 200x200 olmalı')
-      return
-    }
-    if (type === 'vehicle' && (img.width < 800 || img.height < 600)) {
-      toast.error('Araç resmi en az 800x600 olmalı')
-      return
-    }
-    
-    if (type === 'profile') {
-      const dataUrl = await toDataURL(img)
-      if (bytesFromDataUrl(dataUrl) > 1500000) {
-        toast.error('Resim 1.5MB sınırını aşıyor')
-        return
-      }
-      setProfilePhoto(dataUrl)
-      if (me) persistProfile(me.id, { profilePhoto: dataUrl })
-      toast.success('Profil fotoğrafı yüklendi')
-    } else {
-      const full = await toDataURL(img)
-      const thumb = await toThumbnail(img, 240, 180)
-      if (bytesFromDataUrl(thumb) > 500000) {
-        toast.error('Küçük görsel 500KB sınırını aşıyor')
-        return
-      }
-      const next = [...vehicleImages, { full, thumb }].slice(-5)
-      setVehicleImages(next)
-      setPrimaryVehicleImage(full)
-      if (me) {
-        persistProfile(me.id, { vehicleImages: next.map(v => ({ thumb: v.thumb })) })
-        persistProfile(me.id, { primaryVehicleImage: thumb })
-      }
-      toast.success('Araç resmi yüklendi')
+    const newStatus = !me?.available
+    await setAvailable(newStatus)
+    toast.success(newStatus ? 'Online oldunuz!' : 'Molaya geçtiniz')
+  }
+
+  // İstek kabul et
+  const handleAcceptRequest = async (requestId: string) => {
+    try {
+      await accept(requestId)
+      toast.success('İstek kabul edildi! Rotanız çiziliyor...')
+    } catch {
+      toast.error('İstek kabul edilemedi. Başka bir sürücü aldı olabilir.')
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Sürücü Paneli</h1>
-          <p className="text-gray-600">
-            {me ? `Hoş geldiniz, ${me.name}` : 'Sisteme kayıt olun'} 
-            {me && (
-              <span className={`ml-3 text-sm font-medium px-2 py-0.5 rounded ${isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                {isConnected ? 'Çevrimiçi' : 'Bağlantı Yok'}
-              </span>
-            )}
-          </p>
-          {installEvt && (
-            <div className="mt-3">
-              <Button size="sm" onClick={async()=>{ try { await installEvt.prompt(); setInstallEvt(null) } catch {} }}>Uygulamayı Kur</Button>
+    <DriverLayout>
+      <div className="h-[calc(100vh-56px)] flex flex-col lg:flex-row">
+        {/* Sol Panel - Sürücü Kontrolleri */}
+        <div className="w-full lg:w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
+          
+          {/* Online/Mola Toggle */}
+          <div className="p-4 border-b border-gray-700">
+            <button
+              onClick={toggleAvailability}
+              disabled={!hasValidLocation}
+              className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all ${
+                me?.available
+                  ? 'bg-green-600 hover:bg-green-700 text-white'
+                  : 'bg-yellow-600 hover:bg-yellow-700 text-white'
+              } ${!hasValidLocation ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {me?.available ? (
+                <>
+                  <div className="w-3 h-3 bg-white rounded-full animate-pulse"></div>
+                  ONLINE - Çağrı Alıyor
+                </>
+              ) : (
+                <>
+                  <Coffee className="h-5 w-5" />
+                  MOLADA
+                </>
+              )}
+            </button>
+            <p className="text-xs text-gray-500 mt-2 text-center">
+              {locationSource === 'gps' && '📍 GPS konum aktif'}
+              {locationSource === 'ip' && '🌐 IP bazlı konum'}
+              {locationSource === 'manual' && '👆 Manuel konum'}
+              {locationSource === 'none' && '⏳ Konum bekleniyor...'}
+            </p>
+          </div>
+
+          {/* Aktif Yolculuk */}
+          {activeBooking && (
+            <div className="p-4 bg-blue-900/50 border-b border-blue-700">
+              <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                <Navigation className="h-5 w-5 text-blue-400" />
+                Aktif Yolculuk
+              </h3>
+              
+              <div className="space-y-2 text-sm">
+                <p className="text-white font-medium">{activeBooking.pickupLocation?.address}</p>
+                <p className="text-gray-300">→ {activeBooking.dropoffLocation?.address}</p>
+
+                {/* Mesafe Bilgisi */}
+                <div className="text-xs text-gray-400 mt-2">
+                  {typeof metersToPickup === 'number' && activeBooking.status !== 'in_progress' && (
+                    <span className="bg-gray-800 px-2 py-1 rounded">📍 Alış: {Math.round(metersToPickup)} m</span>
+                  )}
+                  {typeof metersToDropoff === 'number' && activeBooking.status === 'in_progress' && (
+                    <span className="bg-gray-800 px-2 py-1 rounded">🎯 Varış: {Math.round(metersToDropoff)} m</span>
+                  )}
+                </div>
+
+                {/* Durum Butonları */}
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {activeBooking.status === 'accepted' && (
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        await updateBookingStatus(activeBooking.id, 'driver_en_route')
+                        const url = `https://www.google.com/maps/dir/?api=1&origin=${me?.location?.lat},${me?.location?.lng}&destination=${activeBooking.pickupLocation?.lat},${activeBooking.pickupLocation?.lng}&travelmode=driving`
+                        window.open(url, '_blank')
+                      }}
+                      className="bg-green-600 hover:bg-green-700 w-full"
+                    >
+                      🚗 Yola Çık & Navigasyon
+                    </Button>
+                  )}
+                  {activeBooking.status === 'driver_en_route' && (
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        await updateBookingStatus(activeBooking.id, 'driver_arrived')
+                        toast.success('Müşteriye vardınız!')
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 w-full"
+                    >
+                      ✅ Geldim
+                    </Button>
+                  )}
+                  {activeBooking.status === 'driver_arrived' && (
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        await confirmPickup(activeBooking.id)
+                        toast.success('Yolculuk başladı!')
+                        const url = `https://www.google.com/maps/dir/?api=1&origin=${activeBooking.pickupLocation?.lat},${activeBooking.pickupLocation?.lng}&destination=${activeBooking.dropoffLocation?.lat},${activeBooking.dropoffLocation?.lng}&travelmode=driving`
+                        window.open(url, '_blank')
+                      }}
+                      className="bg-purple-600 hover:bg-purple-700 w-full"
+                    >
+                      🚀 Müşteriyi Aldım
+                    </Button>
+                  )}
+                  {activeBooking.status === 'in_progress' && (
+                    <>
+                      <a
+                        href={`https://www.google.com/maps/dir/?api=1&origin=${me?.location?.lat},${me?.location?.lng}&destination=${activeBooking.dropoffLocation?.lat},${activeBooking.dropoffLocation?.lng}&travelmode=driving`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1"
+                      >
+                        <Button size="sm" variant="outline" className="text-white border-white w-full">
+                          🗺️ Navigasyon
+                        </Button>
+                      </a>
+                      <Button
+                        size="sm"
+                        disabled={typeof metersToDropoff === 'number' && metersToDropoff > 200}
+                        onClick={async () => {
+                          try { await stopRouteRecordingAndSave(activeBooking.id) } catch { /* ignore */ }
+                          await updateBookingStatus(activeBooking.id, 'completed')
+                          await setAvailable(true)
+                          toast.success('Yolculuk tamamlandı! 🎉')
+                        }}
+                        className="bg-green-600 hover:bg-green-700 flex-1"
+                      >
+                        ✅ Tamamla
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           )}
-        </div>
 
-        {/* Approval info */}
-        {me && approved === false && (
-          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8 rounded-lg">
-            <p className="text-sm text-yellow-900">Başvurunuz alındı. Yönetici onayı bekleniyor.</p>
-          </div>
-        )}
-        {me && approved === true && (
-          <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-8 rounded-lg">
-            <p className="text-sm text-green-900">Onaylandı. Tüm sürücü özellikleri aktif.</p>
-          </div>
-        )}
-
-        {!me ? (
-          <div className="bg-white rounded-xl shadow-lg p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Sürücü Kaydı</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {(!user || user.role !== 'driver') && (
-                <input className="border rounded-lg px-4 py-3" placeholder="Sürücü ID" value={form.id} onChange={e => setForm({ ...form, id: e.target.value })} />
-              )}
-              <input className="border rounded-lg px-4 py-3" placeholder="Ad Soyad" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-              <select className="border rounded-lg px-4 py-3" value={form.vehicleType} onChange={e => setForm({ ...form, vehicleType: e.target.value as any })}>
-                <option value="sedan">Sedan</option>
-                <option value="suv">SUV</option>
-                <option value="van">Van</option>
-                <option value="luxury">Lüks</option>
-              </select>
-              <Button onClick={() => register({ id: (user?.id || form.id), name: form.name, vehicleType: form.vehicleType as any, location: { lat: form.lat, lng: form.lng }, available: true })}>
-                Kaydol
-              </Button>
-            </div>
-            <div className="mt-6 h-96 rounded-lg overflow-hidden border border-gray-200">
-              <OpenStreetMap center={{ lat: form.lat, lng: form.lng }} customerLocation={{ lat: form.lat, lng: form.lng }} drivers={[]} onMapClick={(loc) => setForm({ ...form, lat: loc.lat, lng: loc.lng })} />
-            </div>
-          </div>
-        ) : (
-          <div>
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-blue-100 text-sm">Günlük Kazanç</p>
-                    <p className="text-3xl font-bold mt-1">₺{earnings?.daily || 0}</p>
-                  </div>
-                  <DollarSign className="h-12 w-12 text-blue-200" />
-                </div>
-              </div>
-              
-              <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-green-100 text-sm">Haftalık Kazanç</p>
-                    <p className="text-3xl font-bold mt-1">₺{earnings?.weekly || 0}</p>
-                  </div>
-                  <TrendingUp className="h-12 w-12 text-green-200" />
-                </div>
-              </div>
-              
-              <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-purple-100 text-sm">Aylık Kazanç</p>
-                    <p className="text-3xl font-bold mt-1">₺{earnings?.monthly || 0}</p>
-                  </div>
-                  <DollarSign className="h-12 w-12 text-purple-200" />
-                </div>
-              </div>
-              
-              <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg p-6 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-orange-100 text-sm">Ortalama Puan</p>
-                    <p className="text-3xl font-bold mt-1">{stats.avgRating}</p>
-                  </div>
-                  <Star className="h-12 w-12 text-orange-200 fill-current" />
-                </div>
-              </div>
+          {/* Gelen İstekler */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4 border-b border-gray-700">
+              <h3 className="text-white font-semibold flex items-center gap-2">
+                <Phone className="h-5 w-5" />
+                Gelen İstekler
+                {requests.length > 0 && (
+                  <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full animate-pulse">
+                    {requests.length}
+                  </span>
+                )}
+              </h3>
             </div>
 
-            {/* Interactive blocks */}
+            <div className="divide-y divide-gray-700">
+              {approved === true && requests.map(r => (
+                <div
+                  key={r.id}
+                  className={`p-4 cursor-pointer transition-all ${selectedRequest?.id === r.id ? 'bg-blue-900/50 border-l-4 border-blue-500' : 'hover:bg-gray-700/50'}`}
+                  onClick={() => setSelectedRequest(r)}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center flex-shrink-0 animate-pulse">
+                      <Phone className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-medium truncate">{r.pickup.address}</p>
+                      <p className="text-gray-400 text-sm truncate">→ {r.dropoff.address}</p>
+                      <p className="text-gray-500 text-xs mt-1">🚗 {r.vehicleType}</p>
+                    </div>
+                  </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Map & Requests */}
-              <div className="lg:col-span-2 space-y-6">
-                <div className="bg-white rounded-xl shadow-lg p-6">
-                    <h2 className="text-xl font-bold text-gray-900 flex items-center">
-                      <MapPin className="h-6 w-6 mr-2 text-blue-600" />
-                      Konumunuz ve Rota
-                    </h2>
-                    {(() => {
-                      const hasValidLocation = me.location && (me.location.lat !== 0 || me.location.lng !== 0)
-                      const sourceIcon = locationSource === 'gps' ? '📍' : locationSource === 'ip' ? '🌐' : locationSource === 'manual' ? '👆' : '⏳'
-                      const sourceText = locationSource === 'gps' ? 'GPS Konum' : locationSource === 'ip' ? 'IP Bazlı (Yaklaşık)' : locationSource === 'manual' ? 'Manuel Seçim' : 'Bekleniyor...'
-                      const sourceColor = locationSource === 'gps' ? 'text-green-600' : locationSource === 'ip' ? 'text-blue-600' : locationSource === 'manual' ? 'text-purple-600' : 'text-gray-500'
-                      
-                      return (
-                        <div className="mt-3 flex flex-col gap-2">
-                          {/* Konum kaynağı bilgisi */}
-                          <div className="flex items-center gap-2 text-sm">
-                            <span>{sourceIcon}</span>
-                            <span className={`font-medium ${sourceColor}`}>{sourceText}</span>
-                            {hasValidLocation && (
-                              <span className="text-xs text-gray-400">
-                                ({me.location.lat.toFixed(4)}, {me.location.lng.toFixed(4)})
-                              </span>
-                            )}
-                          </div>
-                          
-                          {/* Müsait toggle */}
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-600">Durum:</span>
-                            <label className={`relative inline-flex items-center ${hasValidLocation ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
-                              <input
-                                type="checkbox"
-                                checked={me.available ?? false}
-                                disabled={!hasValidLocation}
-                                onChange={(e) => {
-                                  const next = e.target.checked
-                                  if (!hasValidLocation) {
-                                    toast.error('Müsait duruma geçmek için önce konumunuz yüklenmeli')
-                                    return
-                                  }
-                                  setAvailable(next)
-                                }}
-                                className="sr-only peer"
-                              />
-                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
-                              <span className={`ml-2 text-sm font-medium ${(me.available ?? false) ? 'text-green-600' : 'text-gray-500'}`}>
-                                {(me.available ?? false) ? 'Müsait' : 'Meşgul'}
-                              </span>
-                            </label>
-                          </div>
-                          
-                          {/* Uyarı mesajları */}
-                          {locating && !hasValidLocation && (
-                            <div className="flex items-center gap-2 text-amber-600 text-xs bg-amber-50 px-3 py-2 rounded-lg">
-                              <span className="animate-pulse">⏳</span>
-                              <span>Konumunuz aranıyor...</span>
-                            </div>
-                          )}
-                          {!locating && !hasValidLocation && (
-                            <div className="flex items-center gap-2 text-red-600 text-xs bg-red-50 px-3 py-2 rounded-lg">
-                              <span>⚠️</span>
-                              <span>Konum bulunamadı. Lütfen haritada tıklayarak konumunuzu seçin.</span>
-                            </div>
-                          )}
-                          {locationSource === 'ip' && (
-                            <div className="flex items-center gap-2 text-blue-600 text-xs bg-blue-50 px-3 py-2 rounded-lg">
-                              <span>💡</span>
-                              <span>IP bazlı yaklaşık konum. Haritada tıklayarak tam konumunuzu seçebilirsiniz.</span>
-                            </div>
-                          )}
-                          {locationSource === 'gps' && (
-                            <div className="flex items-center gap-2 text-green-600 text-xs bg-green-50 px-3 py-2 rounded-lg">
-                              <span>✅</span>
-                              <span>GPS konumu aktif. Konumunuz otomatik güncelleniyor.</span>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })()}
-                  </div>
-                  <div className="h-96 rounded-lg overflow-hidden border border-gray-200 relative">
-                    {/* GPS yükleniyor göstergesi artık yok - harita direkt açılıyor */}
-                    <OpenStreetMap
-                        center={me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : DEFAULT_CENTER}
-                        customerLocation={customerLiveLocation || (me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : DEFAULT_CENTER)}
-                        destination={activeBooking ? (activeBooking.status === 'in_progress' ? activeBooking.dropoffLocation : activeBooking.pickupLocation) : (selectedRequest ? selectedRequest.pickup : undefined)}
-                        drivers={[{ id: me.id, name: me.name, location: me.location && (me.location.lat !== 0 || me.location.lng !== 0) ? me.location : DEFAULT_CENTER, rating: 0, available: me.available }]}
-                        highlightDriverId={me.id}
-                        onMapClick={(loc) => {
-                          setLocationSource('manual')
-                          updateLocation(loc)
-                          toast.success('Konum güncellendi! Şimdi müsait duruma geçebilirsiniz.')
-                        }}
-                        path={activeBooking ? (useBookingStore.getState().routePoints || []) : []}
-                        pickupLocation={activeBooking?.pickupLocation}
-                        dropoffLocation={activeBooking?.dropoffLocation}
-                        showRoute={activeBooking ? (activeBooking.status === 'in_progress' ? 'to_dropoff' : 'to_pickup') : undefined}
-                      />
-                    {/* Manuel konum seçimi için ipucu */}
-                    <div className="absolute bottom-2 left-2 right-2 bg-blue-500/90 text-white text-xs px-3 py-2 rounded-lg flex items-center gap-2">
-                      <span>📍</span>
-                      <span>Haritada tıklayarak konumunuzu güncelleyebilirsiniz</span>
-                    </div>
-                  </div>
-                  {activeBooking && approved === true && (
-                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <h3 className="font-semibold text-blue-900 mb-2">Aktif Rezervasyon</h3>
-                      <p className="text-sm text-blue-800">{activeBooking.pickupLocation?.address} → {activeBooking.dropoffLocation?.address}</p>
-                      <div className="mt-1 text-xs text-blue-700">
-                        {typeof metersToPickup === 'number' ? `Alış noktasına: ${Math.round(metersToPickup)} m` : ''}
-                        {typeof metersToDropoff === 'number' ? ` • Varış noktasına: ${Math.round(metersToDropoff)} m` : ''}
-                      </div>
-                      <div className="mt-2 text-xs text-blue-800">
-                        {(() => {
-                          const cur = (activeBooking as any)?.extras?.pricing?.currency || 'EUR'
-                          const sym = currencySymbol(cur)
-                          const driverFare = Number(activeBooking.basePrice || 0)
-                          const total = Number(activeBooking.finalPrice ?? activeBooking.basePrice ?? 0)
-                          const fee = Math.max(0, total - driverFare)
-                          return `Müşteri: ${sym}${total.toFixed(2)} • Sizin kazanç: ${sym}${driverFare.toFixed(2)} • Bizim pay: ${sym}${fee.toFixed(2)}`
-                        })()}
-                      </div>
-                      
-                      {/* Durum Göstergesi */}
-                      <div className="mt-3 p-2 rounded bg-white/70">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          {activeBooking.status === 'accepted' && (
-                            <span className="text-yellow-700">⏳ Müşteri bekleniyor - Yola çıkın</span>
-                          )}
-                          {activeBooking.status === 'driver_en_route' && (
-                            <span className="text-blue-700">🚗 Müşteriye doğru yola çıktınız</span>
-                          )}
-                          {activeBooking.status === 'driver_arrived' && (
-                            <span className="text-green-700">✅ Müşteri yanındasınız - Yolculuğu başlatın</span>
-                          )}
-                          {activeBooking.status === 'in_progress' && (
-                            <span className="text-purple-700">🚀 Yolculuk devam ediyor - Varış noktasına gidin</span>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {/* Yolculuk devam ederken navigasyon butonu */}
-                      {activeBooking.status === 'in_progress' && (
-                        <div className="mt-2">
-                          <a
-                            href={`https://www.google.com/maps/dir/?api=1&origin=${me?.location?.lat},${me?.location?.lng}&destination=${activeBooking.dropoffLocation?.lat},${activeBooking.dropoffLocation?.lng}&travelmode=driving`}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            <Button size="sm" variant="outline">🗺️ Navigasyon</Button>
-                          </a>
-                          <span className="ml-2 text-xs text-gray-600">
-                            {typeof metersToDropoff === 'number' ? `${Math.round(metersToDropoff)} m kaldı` : ''}
-                          </span>
-                        </div>
-                      )}
-                      
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={activeBooking.status !== 'accepted'}
-                          onClick={async () => {
-                            await updateBookingStatus(activeBooking.id, 'driver_en_route')
-                            // Google Maps navigasyon aç
-                            const url = `https://www.google.com/maps/dir/?api=1&origin=${me?.location?.lat},${me?.location?.lng}&destination=${activeBooking.pickupLocation?.lat},${activeBooking.pickupLocation?.lng}&travelmode=driving`
-                            window.open(url, '_blank')
-                          }}
-                        >
-                          🚗 Yola Çık & Navigasyon
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={activeBooking.status !== 'driver_en_route'}
-                          onClick={async () => {
-                            if (typeof metersToPickup === 'number' && metersToPickup > 150) {
-                              toast.error('Alış noktasına yaklaşınca “Geldim” yapın')
-                              return
-                            }
-                            await updateBookingStatus(activeBooking.id, 'driver_arrived')
-                            toast.success('Müşteriye vardınız!')
-                          }}
-                        >
-                          ✅ Geldim
-                        </Button>
-                        <Button
-                          size="sm"
-                          disabled={activeBooking.status !== 'driver_arrived'}
-                          onClick={async () => {
-                            await confirmPickup(activeBooking.id)
-                            toast.success('Yolculuk başladı! Varış noktasına gidin')
-                            // Google Maps navigasyon aç - dropoff'a
-                            const url = `https://www.google.com/maps/dir/?api=1&origin=${activeBooking.pickupLocation?.lat},${activeBooking.pickupLocation?.lng}&destination=${activeBooking.dropoffLocation?.lat},${activeBooking.dropoffLocation?.lng}&travelmode=driving`
-                            window.open(url, '_blank')
-                          }}
-                        >
-                          🚀 Müşteriyi Aldım & Yola Çık
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!(activeBooking.status === 'in_progress' && typeof metersToDropoff === 'number' && metersToDropoff <= 200)}
-                          onClick={async () => {
-                            try {
-                              await stopRouteRecordingAndSave(activeBooking.id)
-                            } catch {}
-                            await updateBookingStatus(activeBooking.id, 'completed')
-                            try { await setAvailable(true) } catch {}
-                            toast.success('Yolculuk tamamlandı! Tebrikler 🎉')
-                          }}
-                        >
-                          ✅ Yolculuğu Tamamla
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="bg-white rounded-xl shadow-lg p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold text-gray-900 flex items-center">
-                      <Clock className="h-6 w-6 mr-2 text-blue-600" />
-                      Bekleyen Çağrılar
-                    </h2>
-                    <Button size="sm" variant="outline" onClick={() => refreshRequests()} disabled={approved !== true}>Yenile</Button>
-                  </div>
-                  <div className="space-y-3">
-                    {approved === true && requests.map(r => (
-                      <div key={r.id} className={`p-4 border-2 rounded-lg transition-all ${selectedRequest?.id === r.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}>
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 cursor-pointer" onClick={() => setSelectedRequest(r)}>
-                            <p className="font-medium text-gray-900">{r.pickup.address}</p>
-                            <p className="text-sm text-gray-600 mt-1">→ {r.dropoff.address}</p>
-                            <p className="text-xs text-gray-500 mt-1">Araç tipi: {r.vehicleType}</p>
-                          </div>
-                          <div className="flex flex-col gap-2 ml-4">
-                            <Button size="sm" onClick={() => accept(r.id)} disabled={approved !== true}>Kabul Et</Button>
-                            {me && me.location && (
-                              <a
-                                href={`https://www.google.com/maps/dir/?api=1&origin=${me.location.lat},${me.location.lng}&destination=${r.pickup.lat},${r.pickup.lng}`}
-                                target="_blank" rel="noreferrer"
-                                className="text-xs text-blue-600 text-center hover:underline"
-                              >
-                                Navigasyon
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {approved === true && requests.length === 0 && (
-                      <div className="text-center py-12 text-gray-500">
-                        <Clock className="h-16 w-16 text-gray-300 mx-auto mb-3" />
-                        <p>Bekleyen çağrı yok</p>
-                      </div>
-                    )}
-                    {approved === false && (
-                      <div className="text-center py-12 text-gray-500">
-                        <AlertCircle className="h-16 w-16 text-yellow-400 mx-auto mb-3" />
-                        <p>Onay bekleniyor. Yönetici onayladığında çağrılar görünür.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Sidebar */}
-              <div className="space-y-6">
-                {/* Profile Card */}
-                <div className="bg-white rounded-xl shadow-lg p-6">
-                  <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
-                    <User className="h-6 w-6 mr-2 text-blue-600" />
-                    Profil
-                  </h2>
-                  <div className="flex flex-col items-center mb-4">
-                    <div className="relative">
-                      {profilePhoto ? (
-                        <img src={profilePhoto} alt="Profil" className="w-24 h-24 rounded-full object-cover border-4 border-blue-500" />
-                      ) : (
-                        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center border-4 border-blue-500">
-                          <User className="h-12 w-12 text-white" />
-                        </div>
-                      )}
-                      <label className="absolute bottom-0 right-0 bg-blue-600 rounded-full p-2 cursor-pointer hover:bg-blue-700 transition-all">
-                        <Camera className="h-4 w-4 text-white" />
-                        <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'profile')} />
-                      </label>
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mt-3">{form.name}</h3>
-                    <div className="flex items-center mt-1">
-                      <Star className="h-4 w-4 text-yellow-400 fill-current mr-1" />
-                      <span className="text-sm text-gray-600">{stats.avgRating} puan</span>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Ad Soyad</label>
-                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" value={form.name} onChange={e => { setForm({ ...form, name: e.target.value }); if (me) { persistProfile(me.id, { name: e.target.value }); try { updateProfile({ name: e.target.value }) } catch {} } }} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Plaka</label>
-                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" value={licensePlate} onChange={e => { setLicensePlate(e.target.value); if (me) { persistProfile(me.id, { licensePlate: e.target.value }); try { updateProfile({ licensePlate: e.target.value }) } catch {} } }} />
-                    </div>
-                  </div>
-                </div>
-
-                
-                
-                <div className="bg-white rounded-xl shadow-lg p-6">
-                  <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
-                    <Car className="h-6 w-6 mr-2 text-blue-600" />
-                    Araç Bilgileri
-                  </h2>
-                  {primaryVehicleImage && (
-                    <div className="mb-4">
-                      <img src={primaryVehicleImage} alt="Araç" className="rounded-lg w-full h-40 object-cover border border-gray-200" />
-                    </div>
-                  )}
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Araç Modeli</label>
-                      <input className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" value={vehicleModelInput} onChange={e => { setVehicleModelInput(e.target.value); if (me) { persistProfile(me.id, { vehicleModel: e.target.value }); try { updateProfile({ vehicleModel: e.target.value }) } catch {} } }} />
-                    </div>
-                    <input ref={vehicleFileRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'vehicle')} />
-                    <Button variant="outline" className="w-full" onClick={() => vehicleFileRef.current?.click()}>
-                      <Camera className="h-4 w-4 mr-2" />
-                      Araç Resmi Yükle
+                  {/* Hızlı Kabul Butonları */}
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); handleAcceptRequest(r.id) }}
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                    >
+                      <CheckCircle className="h-4 w-4 mr-1" />
+                      Kabul Et
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => { e.stopPropagation(); setSelectedRequest(null) }}
+                      className="text-white border-gray-600"
+                    >
+                      <XCircle className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
+              ))}
 
-                <div className="bg-white rounded-xl shadow-lg p-6">
-                  <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
-                    <FileText className="h-6 w-6 mr-2 text-blue-600" />
-                    Geri Bildirim
-                  </h2>
-                  <form className="space-y-3" onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget as HTMLFormElement); const text = String(fd.get('text') || ''); if (text) { await submitComplaint(text); toast.success('Geri bildiriminiz gönderildi'); (e.currentTarget as HTMLFormElement).reset() } }}>
-                    <textarea name="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Sorununuzu veya önerinizi yazın" rows={4} />
-                    <Button type="submit" className="w-full">Gönder</Button>
-                  </form>
-              </div>
+              {approved === true && requests.length === 0 && (
+                <div className="p-8 text-center text-gray-500">
+                  <Phone className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>Bekleyen istek yok</p>
+                  <p className="text-sm mt-1">Online olduğunuzda istekler burada görünecek</p>
+                </div>
+              )}
+
+              {approved === false && (
+                <div className="p-8 text-center text-yellow-500">
+                  <Clock className="h-12 w-12 mx-auto mb-3" />
+                  <p>Başvurunuz onay bekliyor</p>
+                  <p className="text-sm mt-1 text-gray-400">Yönetici onay verdikten sonra çağrı alabilirsiniz</p>
+                </div>
+              )}
             </div>
           </div>
-        )}
+
+          {/* Günlük Kazanç */}
+          <div className="p-4 border-t border-gray-700 bg-gray-800">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400 text-sm">Bugün:</span>
+              <span className="text-2xl font-bold text-green-400">₺{earnings?.daily || 0}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Sağ Panel - Harita */}
+        <div className="flex-1 relative">
+          <OpenStreetMap
+            center={hasValidLocation ? me.location : DEFAULT_CENTER}
+            customerLocation={customerLiveLocation || (activeBooking?.pickupLocation)}
+            destination={activeBooking ? (activeBooking.status === 'in_progress' ? activeBooking.dropoffLocation : activeBooking.pickupLocation) : (selectedRequest ? selectedRequest.pickup : undefined)}
+            drivers={hasValidLocation ? [{ id: me.id, name: me.name, location: me.location, rating: 0, available: me.available }] : []}
+            highlightDriverId={me?.id}
+            onMapClick={(loc) => {
+              setLocationSource('manual')
+              updateLocation(loc)
+              toast.success('Konum güncellendi!')
+            }}
+            path={activeBooking ? (useBookingStore.getState().routePoints || []) : []}
+            pickupLocation={activeBooking?.pickupLocation}
+            dropoffLocation={activeBooking?.dropoffLocation}
+            showRoute={activeBooking ? (activeBooking.status === 'in_progress' ? 'to_dropoff' : 'to_pickup') : undefined}
+          />
+
+          {/* Harita Uyarı */}
+          <div className="absolute bottom-4 left-4 right-4 lg:left-4 lg:right-auto lg:w-80 bg-gray-900/90 text-white text-sm px-4 py-3 rounded-lg flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-green-400" />
+            <span>Konumunuz müşterilere görünür durumda</span>
+          </div>
+        </div>
       </div>
-    </div>
+    </DriverLayout>
   )
 }
 
-// Helper functions
-async function readImage(file: File): Promise<HTMLImageElement> {
-  const url = URL.createObjectURL(file)
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => { URL.revokeObjectURL(url); resolve(img) }
-    img.onerror = reject
-    img.src = url
-  })
-}
-
-async function toDataURL(img: HTMLImageElement): Promise<string> {
-  const canvas = document.createElement('canvas')
-  canvas.width = img.width; canvas.height = img.height
-  const ctx = canvas.getContext('2d')!
-  ctx.drawImage(img, 0, 0)
-  return canvas.toDataURL('image/jpeg', 0.85)
-}
-
-async function toThumbnail(img: HTMLImageElement, w: number, h: number): Promise<string> {
-  const canvas = document.createElement('canvas')
-  canvas.width = w; canvas.height = h
-  const ctx = canvas.getContext('2d')!
-  ctx.drawImage(img, 0, 0, w, h)
-  return canvas.toDataURL('image/jpeg', 0.75)
-}
-
-function persistProfile(id: string, patch: any) {
-  try {
-    const key = `driver_profile_${id}`
-    const prev = JSON.parse(localStorage.getItem(key) || '{}')
-    const next = { ...prev, ...patch }
-    localStorage.setItem(key, JSON.stringify(next))
-  } catch {}
-}
-
-function bytesFromDataUrl(dataUrl: string): number {
-  try { const base64 = (dataUrl.split(',')[1] || ''); return Math.ceil(base64.length * 3 / 4) } catch { return 0 }
-}
+export default DriverDashboard

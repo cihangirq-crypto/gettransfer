@@ -5,6 +5,11 @@ import { io as ioClient, type Socket } from 'socket.io-client'
 import { useNavigate } from 'react-router-dom'
 import { currencySymbol } from '@/utils/pricing'
 import { toast } from 'sonner'
+import { 
+  Users, Truck, MapPin, DollarSign, FileText, CheckCircle, XCircle, 
+  Clock, Eye, Download, Trash2, Edit, Search, Filter, RefreshCw,
+  TrendingUp, Calendar, Navigation, Phone, Mail, Car
+} from 'lucide-react'
 
 const extFromDataUrl = (u: string) => (u || '').startsWith('data:image/png') ? 'png' : 'jpg'
 
@@ -18,31 +23,100 @@ const haversineMeters = (a: { lat: number, lng: number }, b: { lat: number, lng:
   return 2 * R * Math.asin(Math.sqrt(h))
 }
 
+type DriverWithPricing = {
+  id: string
+  name: string
+  email?: string
+  phone?: string
+  vehicleType: 'sedan' | 'suv' | 'van' | 'luxury'
+  vehicleModel?: string
+  licensePlate?: string
+  location?: { lat: number, lng: number }
+  available: boolean
+  approved: boolean
+  docs?: Array<{ name: string, url?: string }>
+  rejectedReason?: string
+  createdAt?: string
+  // Fiyatlandırma
+  driverPerKm?: number
+  platformFeePercent?: number
+  customPricing?: boolean
+}
+
 export const AdminDrivers: React.FC = () => {
   const navigate = useNavigate()
-  const [pending, setPending] = useState<any[]>([])
-  const [approved, setApproved] = useState<any[]>([])
-  const [rejected, setRejected] = useState<any[]>([])
-  const [view, setView] = useState<'approved' | 'pending' | 'rejected'>('approved')
+  const [pending, setPending] = useState<DriverWithPricing[]>([])
+  const [approved, setApproved] = useState<DriverWithPricing[]>([])
+  const [rejected, setRejected] = useState<DriverWithPricing[]>([])
+  const [view, setView] = useState<'dashboard' | 'approved' | 'pending' | 'rejected' | 'map'>('dashboard')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterAvailable, setFilterAvailable] = useState<'all' | 'online' | 'offline'>('all')
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [selectedDriver, setSelectedDriver] = useState<any | null>(null)
-  const [detailTab, setDetailTab] = useState<'live' | 'history' | 'docs'>('live')
+  const [selectedDriver, setSelectedDriver] = useState<DriverWithPricing | null>(null)
+  const [detailTab, setDetailTab] = useState<'info' | 'live' | 'history' | 'docs' | 'pricing'>('info')
   const [rejectReason, setRejectReason] = useState('Eksik belge')
 
   const [bookings, setBookings] = useState<any[]>([])
   const [preview, setPreview] = useState<{ url: string, name: string } | null>(null)
   const [customerLiveLocation, setCustomerLiveLocation] = useState<{ lat: number, lng: number } | null>(null)
+  
+  // Fiyatlandırma state
+  const [pricingForm, setPricingForm] = useState({
+    driverPerKm: 1,
+    platformFeePercent: 3,
+    customPricing: false
+  })
+
+  // Global pricing config
+  const [globalPricing, setGlobalPricing] = useState({
+    driverPerKm: 1,
+    platformFeePercent: 3,
+    currency: 'TRY'
+  })
 
   const list = view === 'approved' ? approved : (view === 'pending' ? pending : rejected)
+
+  const filteredList = useMemo(() => {
+    let result = list
+    
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase()
+      result = result.filter(d => 
+        d.name.toLowerCase().includes(term) ||
+        d.email?.toLowerCase().includes(term) ||
+        d.licensePlate?.toLowerCase().includes(term)
+      )
+    }
+    
+    if (filterAvailable !== 'all') {
+      result = result.filter(d => 
+        filterAvailable === 'online' ? d.available : !d.available
+      )
+    }
+    
+    return result
+  }, [list, searchTerm, filterAvailable])
+
+  // Stats
+  const stats = useMemo(() => ({
+    total: approved.length,
+    online: approved.filter(d => d.available).length,
+    offline: approved.filter(d => !d.available).length,
+    pending: pending.length,
+    rejected: rejected.length
+  }), [approved, pending, rejected])
 
   const refresh = async () => {
     const p = await fetch('/api/drivers/pending').then(r => r.json()).catch(() => ({}))
     const a = await fetch('/api/drivers/list?status=approved').then(r => r.json()).catch(() => ({}))
     const r = await fetch('/api/drivers/list?status=rejected').then(r => r.json()).catch(() => ({}))
+    const pr = await fetch('/api/pricing').then(r => r.json()).catch(() => ({}))
+    
     setPending(p?.data || [])
     setApproved(a?.data || [])
     setRejected(r?.data || [])
+    if (pr?.data) setGlobalPricing(pr.data)
   }
 
   useEffect(() => { refresh() }, [])
@@ -56,23 +130,29 @@ export const AdminDrivers: React.FC = () => {
     }
     ;(async () => {
       const d = await fetch(`/api/drivers/${selectedId}`).then(r => r.json()).catch(() => null)
-      if (d?.success && d?.data) setSelectedDriver(d.data)
+      if (d?.success && d?.data) {
+        setSelectedDriver(d.data)
+        setPricingForm({
+          driverPerKm: d.data.driverPerKm || globalPricing.driverPerKm,
+          platformFeePercent: d.data.platformFeePercent || globalPricing.platformFeePercent,
+          customPricing: d.data.customPricing || false
+        })
+      }
       const b = await fetch(`/api/bookings/by-driver/${selectedId}`).then(r => r.json()).catch(() => null)
       if (b?.success && Array.isArray(b.data)) setBookings(b.data)
     })()
-  }, [selectedId])
+  }, [selectedId, globalPricing])
 
   const activeBooking = useMemo(() => {
-    const b = bookings.find(x => x && x.status !== 'completed' && x.status !== 'cancelled') || null
-    return b
+    return bookings.find(x => x && x.status !== 'completed' && x.status !== 'cancelled') || null
   }, [bookings])
 
   const completedBookings = useMemo(() => {
     return bookings.filter(x => x && x.status === 'completed')
   }, [bookings])
 
+  // Socket for real-time updates
   const socketRef = useRef<Socket | null>(null)
-  const bookingSocketRef = useRef<Socket | null>(null)
 
   useEffect(() => {
     const origin = (import.meta.env.VITE_API_ORIGIN as string) || `http://${window.location.hostname}:3005`
@@ -83,350 +163,727 @@ export const AdminDrivers: React.FC = () => {
       setApproved(prev => prev.map(x => x.id === d.id ? { ...x, location: d.location, available: d.available } : x))
       if (selectedDriver?.id === d.id) setSelectedDriver((cur: any) => cur ? { ...cur, location: d.location, available: d.available } : cur)
     })
-    s.on('booking:update', (b: any) => {
-      if (!b?.id) return
-      if (b.driverId && b.driverId === selectedId) {
-        setBookings(prev => {
-          const exists = prev.some(x => x?.id === b.id)
-          return exists ? prev.map(x => x?.id === b.id ? b : x) : [b, ...prev]
-        })
-      }
-    })
-    return () => {
-      s.disconnect()
-      socketRef.current = null
-    }
-  }, [selectedId, selectedDriver?.id])
+    return () => { s.disconnect(); socketRef.current = null }
+  }, [selectedDriver?.id])
 
-  useEffect(() => {
-    const b = activeBooking
-    if (!b?.id) {
-      setCustomerLiveLocation(null)
-      if (bookingSocketRef.current) {
-        try { bookingSocketRef.current.disconnect() } catch {}
-        bookingSocketRef.current = null
-      }
-      return
+  // Save driver pricing
+  const savePricing = async () => {
+    if (!selectedDriver) return
+    try {
+      const res = await fetch('/api/drivers/pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedDriver.id,
+          ...pricingForm
+        })
+      })
+      const j = await res.json()
+      if (!res.ok || !j?.success) throw new Error(j?.error || 'failed')
+      toast.success('Fiyatlandırma kaydedildi')
+      refresh()
+    } catch {
+      toast.error('Kaydetme başarısız')
     }
-    const origin = (import.meta.env.VITE_API_ORIGIN as string) || `http://${window.location.hostname}:3005`
-    const s = ioClient(origin, { transports: ['websocket'], reconnection: true })
-    bookingSocketRef.current = s
-    s.on('connect', () => {
-      s.emit('booking:join', { bookingId: b.id })
-    })
-    s.on('customer:update', (ev: any) => {
-      if (ev?.bookingId !== b.id) return
-      if (ev?.location && typeof ev.location.lat === 'number' && typeof ev.location.lng === 'number') {
-        setCustomerLiveLocation(ev.location)
-      }
-    })
-    s.on('booking:update', (next: any) => {
-      if (next?.id !== b.id) return
-      setBookings(prev => prev.map(x => x?.id === next.id ? next : x))
-    })
-    fetch(`/api/bookings/${b.id}/customer-location`).then(r => r.json()).then(j => {
-      if (j?.success && j?.data && typeof j.data.lat === 'number' && typeof j.data.lng === 'number') setCustomerLiveLocation(j.data)
-    }).catch(() => {})
-    return () => {
-      try { s.emit('booking:leave', { bookingId: b.id }) } catch {}
-      s.disconnect()
-      bookingSocketRef.current = null
+  }
+
+  // Approve driver
+  const approveDriver = async (id: string) => {
+    try {
+      const res = await fetch('/api/drivers/approve', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ id }) 
+      })
+      const j = await res.json()
+      if (!res.ok || !j?.success) throw new Error(j?.error || 'failed')
+      toast.success('Onaylandı')
+      setSelectedId(null)
+      await refresh()
+      setView('approved')
+    } catch {
+      toast.error('Onaylama başarısız')
     }
-  }, [activeBooking?.id])
+  }
+
+  // Reject driver
+  const rejectDriver = async (id: string, reason: string) => {
+    try {
+      const res = await fetch('/api/drivers/reject', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ id, reason }) 
+      })
+      const j = await res.json()
+      if (!res.ok || !j?.success) throw new Error(j?.error || 'failed')
+      toast.success('Reddedildi')
+      setSelectedId(null)
+      await refresh()
+      setView('rejected')
+    } catch {
+      toast.error('Reddetme başarısız')
+    }
+  }
+
+  // Delete driver
+  const deleteDriver = async (id: string) => {
+    if (!confirm('Bu sürücüyü silmek istediğinize emin misiniz?')) return
+    try {
+      const res = await fetch('/api/drivers/delete', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ id }) 
+      })
+      const j = await res.json()
+      if (!res.ok || !j?.success) throw new Error(j?.error || 'failed')
+      toast.success('Silindi')
+      setSelectedId(null)
+      refresh()
+    } catch {
+      toast.error('Silme başarısız')
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">Yönetici • Sürücüler</h1>
-
-        <div className="flex gap-2 mb-4">
-          <Button variant={view === 'approved' ? 'primary' : 'outline'} onClick={() => { setView('approved'); setSelectedId(null); setDetailTab('live') }}>Sürücüler</Button>
-          <Button variant={view === 'pending' ? 'primary' : 'outline'} onClick={() => { setView('pending'); setSelectedId(null); setDetailTab('docs') }}>Onay Bekleyenler</Button>
-          <Button variant={view === 'rejected' ? 'primary' : 'outline'} onClick={() => { setView('rejected'); setSelectedId(null); setDetailTab('docs') }}>Reddedilenler</Button>
-          <Button variant="outline" onClick={() => navigate('/admin/pricing')}>Fiyatlandırma</Button>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white rounded-lg shadow-md p-4 lg:col-span-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">{view === 'approved' ? 'Onaylı Sürücüler' : (view === 'pending' ? 'Onay Bekleyen Sürücüler' : 'Reddedilen Başvurular')}</h2>
-              <Button size="sm" variant="outline" onClick={() => refresh()}>Yenile</Button>
-            </div>
-            <div className="mt-3 space-y-3">
-              {list.map(d => (
-                <div
-                  key={d.id}
-                  className={`border rounded p-3 cursor-pointer ${selectedId === d.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}
-                  onClick={() => {
-                    setSelectedId(d.id)
-                    setDetailTab(view === 'approved' ? 'live' : 'docs')
-                  }}
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{d.name} • {d.email || '-'}</p>
-                      <p className="text-xs text-gray-500">Araç: {d.vehicleType} • Plaka: {d.licensePlate || '-'}</p>
-                      {view === 'approved' && d.location && (
-                        <p className="text-xs text-gray-500 mt-1">Konum: {Number(d.location.lat).toFixed(5)}, {Number(d.location.lng).toFixed(5)}</p>
-                      )}
-                    </div>
-                    {view === 'pending' && (
-                      <div className="mt-1 flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={async (e) => {
-                            e.stopPropagation()
-                            try {
-                              const res = await fetch('/api/drivers/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: d.id }) })
-                              const j = await res.json().catch(() => null)
-                              if (!res.ok || !j?.success) throw new Error(j?.error || 'approve_failed')
-                              toast.success('Onaylandı')
-                              setSelectedId(null)
-                              await refresh()
-                              setView('approved')
-                            } catch {
-                              toast.error('Onaylama başarısız')
-                            }
-                          }}
-                        >
-                          Onayla
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={async (e) => {
-                            e.stopPropagation()
-                            try {
-                              const res = await fetch('/api/drivers/reject', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: d.id, reason: rejectReason }) })
-                              const j = await res.json().catch(() => null)
-                              if (!res.ok || !j?.success) throw new Error(j?.error || 'reject_failed')
-                              toast.success('Reddedildi')
-                              setSelectedId(null)
-                              await refresh()
-                              setView('rejected')
-                            } catch {
-                              toast.error('Reddetme başarısız')
-                            }
-                          }}
-                        >
-                          Reddet
-                        </Button>
-                      </div>
-                    )}
-                    {view === 'approved' && (
-                      <div className="mt-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-red-600 border-red-200 hover:bg-red-50"
-                          onClick={async (e) => {
-                            e.stopPropagation()
-                            if (!confirm('Bu sürücüyü silmek istediğinize emin misiniz?')) return
-                            try {
-                              const res = await fetch('/api/drivers/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: d.id }) })
-                              const j = await res.json().catch(() => ({}))
-                              if (!res.ok || !j?.success) throw new Error(j?.error || 'delete_failed')
-                              toast.success('Silindi')
-                              setSelectedId(null)
-                              refresh()
-                            } catch {
-                              toast.error('Silme başarısız')
-                            }
-                          }}
-                        >
-                          Sil
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {list.length === 0 && <p className="text-sm text-gray-500">Kayıt yok</p>}
-            </div>
+    <div className="min-h-screen bg-gray-100">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-900">Admin Paneli</h1>
+            <Button variant="outline" size="sm" onClick={refresh}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Yenile
+            </Button>
           </div>
-
-          <div className="bg-white rounded-lg shadow-md p-4">
-            <h2 className="text-lg font-semibold">Detay</h2>
-            {!selectedDriver ? (
-              <p className="text-sm text-gray-500 mt-2">Listeden bir kayıt seçin</p>
-            ) : (
-              <div className="mt-3 space-y-3">
-                <div className="flex gap-2">
-                  <Button size="sm" variant={detailTab === 'live' ? 'primary' : 'outline'} onClick={() => setDetailTab('live')}>Şu Anki Yolculuk</Button>
-                  <Button size="sm" variant={detailTab === 'history' ? 'primary' : 'outline'} onClick={() => setDetailTab('history')}>Geçmiş</Button>
-                  <Button size="sm" variant={detailTab === 'docs' ? 'primary' : 'outline'} onClick={() => setDetailTab('docs')}>Evraklar</Button>
-                </div>
-
-                <div className="text-sm">
-                  <div><span className="font-medium">Ad:</span> {selectedDriver.name}</div>
-                  <div><span className="font-medium">E-posta:</span> {selectedDriver.email || '-'}</div>
-                  <div><span className="font-medium">Araç:</span> {selectedDriver.vehicleType} • {selectedDriver.vehicleModel || '-'}</div>
-                  <div><span className="font-medium">Plaka:</span> {selectedDriver.licensePlate || '-'}</div>
-                </div>
-
-                {detailTab === 'live' && (
-                  <div className="space-y-3">
-                    {!activeBooking ? (
-                      <div className="text-sm text-gray-600">Aktif yolculuk yok.</div>
-                    ) : (
-                      <>
-                        <div className="text-sm">
-                          <div className="font-medium text-gray-900">Aktif Yolculuk</div>
-                          <div className="text-gray-700 mt-1">{activeBooking.pickupLocation?.address} → {activeBooking.dropoffLocation?.address}</div>
-                          <div className="text-xs text-gray-500 mt-1">Durum: {activeBooking.status}</div>
-                          <div className="text-xs text-gray-600 mt-1">
-                            {(() => {
-                              const cur = (activeBooking as any)?.extras?.pricing?.currency || 'EUR'
-                              const sym = currencySymbol(cur)
-                              const driverFare = Number(activeBooking.basePrice || 0)
-                              const total = Number(activeBooking.finalPrice ?? activeBooking.basePrice ?? 0)
-                              const fee = Math.max(0, total - driverFare)
-                              return `Müşteri: ${sym}${total.toFixed(2)} • Şoför: ${sym}${driverFare.toFixed(2)} • Bizim pay: ${sym}${fee.toFixed(2)}`
-                            })()}
-                          </div>
-                          {selectedDriver.location && activeBooking.pickupLocation && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              Alış mesafe: {Math.round(haversineMeters(selectedDriver.location, activeBooking.pickupLocation))} m
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-
-                    {/* ALWAYS SHOW MAP if driver has location, even without active booking */}
-                    {selectedDriver.location && (
-                      <div className="h-64 w-full rounded border overflow-hidden relative z-0">
-                         <OpenStreetMap
-                            center={selectedDriver.location}
-                            // If no booking, just show driver location as 'customer' (center) and destination as same to render single marker
-                            customerLocation={activeBooking?.pickupLocation || selectedDriver.location}
-                            destination={activeBooking?.dropoffLocation || selectedDriver.location}
-                            drivers={[{ 
-                                id: selectedDriver.id, 
-                                name: selectedDriver.name, 
-                                location: selectedDriver.location, 
-                                rating: 0, 
-                                available: !!selectedDriver.available 
-                            }]}
-                            highlightDriverId={selectedDriver.id}
-                          />
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {detailTab === 'history' && (
-                  <div className="space-y-2">
-                    {completedBookings.length === 0 && <div className="text-sm text-gray-600">Tamamlanan yolculuk yok.</div>}
-                    {completedBookings.map((b: any) => (
-                      <div key={b.id} className="border rounded p-3">
-                        <div className="text-sm font-medium">{b.pickupLocation?.address} → {b.dropoffLocation?.address}</div>
-                        <div className="text-xs text-gray-500 mt-1">Kod: {b.reservationCode || '-'} • Tarih: {b.pickupTime ? new Date(b.pickupTime).toLocaleString('tr-TR') : '-'}</div>
-                        <div className="text-xs text-gray-500 mt-1">Ücret: {b.finalPrice ?? b.basePrice ?? 0} • Durum: {b.status}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {detailTab === 'docs' && (
-                  <div className="space-y-2">
-                    <div className="space-y-2">
-                      {Array.isArray(selectedDriver.docs) && selectedDriver.docs.length > 0 ? selectedDriver.docs.map((x: any, i: number) => (
-                        <div key={i} className="flex items-center gap-3">
-                          <span className="text-xs">• {x.name}</span>
-                          {x.url ? (
-                            <>
-                              <img src={x.url} alt={x.name} className="h-16 rounded border cursor-zoom-in" onClick={() => setPreview({ url: x.url, name: x.name })} />
-                              <a href={x.url} download={`${selectedDriver.id}_${x.name}.${extFromDataUrl(x.url)}`} className="text-blue-600 text-xs hover:underline">indir</a>
-                            </>
-                          ) : (
-                            <span className="text-xs text-gray-400">(yok)</span>
-                          )}
-                        </div>
-                      )) : (
-                        <div className="text-sm text-gray-600">Belge yok.</div>
-                      )}
-                    </div>
-
-                    {(view === 'pending' || view === 'rejected') && (
-                      <div className="space-y-2 pt-3 border-t">
-                        <label className="text-xs text-gray-600">Red nedeni</label>
-                        <input className="border rounded px-2 py-1 text-sm w-full" value={rejectReason} onChange={e => setRejectReason(e.target.value)} />
-                        <div className="flex gap-2">
-                          {view === 'pending' && (
-                            <Button onClick={async () => {
-                              try {
-                                const res = await fetch('/api/drivers/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: selectedDriver.id }) })
-                                const j = await res.json().catch(() => null)
-                                if (!res.ok || !j?.success) throw new Error(j?.error || 'approve_failed')
-                                toast.success('Onaylandı')
-                                setSelectedId(null)
-                                await refresh()
-                                setView('approved')
-                              } catch {
-                                toast.error('Onaylama başarısız')
-                              }
-                            }}>
-                              Onayla
-                            </Button>
-                          )}
-                          <Button variant="outline" onClick={async () => {
-                            try {
-                              const res = await fetch('/api/drivers/reject', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: selectedDriver.id, reason: rejectReason }) })
-                              const j = await res.json().catch(() => null)
-                              if (!res.ok || !j?.success) throw new Error(j?.error || 'reject_failed')
-                              toast.success('Reddedildi')
-                              setSelectedId(null)
-                              await refresh()
-                              setView('rejected')
-                            } catch {
-                              toast.error('Reddetme başarısız')
-                            }
-                          }}>
-                            Reddet
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {view === 'approved' && (
-                  <div className="pt-3 border-t">
-                    <Button
-                      variant="outline"
-                      className="w-full text-red-600 border-red-200 hover:bg-red-50"
-                      onClick={async () => {
-                        if (!confirm('Bu sürücüyü silmek istediğinize emin misiniz?')) return
-                        try {
-                          const res = await fetch('/api/drivers/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: selectedDriver.id }) })
-                          const j = await res.json().catch(() => ({}))
-                          if (!res.ok || !j?.success) throw new Error(j?.error || 'delete_failed')
-                          toast.success('Silindi')
-                          setSelectedId(null)
-                          refresh()
-                        } catch {
-                          toast.error('Silme başarısız')
-                        }
-                      }}
-                    >
-                      Sürücüyü Sil
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
+          
+          {/* Navigation Tabs */}
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
+            <Button 
+              variant={view === 'dashboard' ? 'primary' : 'outline'} 
+              size="sm"
+              onClick={() => { setView('dashboard'); setSelectedId(null) }}
+            >
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Özet
+            </Button>
+            <Button 
+              variant={view === 'map' ? 'primary' : 'outline'} 
+              size="sm"
+              onClick={() => { setView('map'); setSelectedId(null) }}
+            >
+              <MapPin className="h-4 w-4 mr-2" />
+              Harita
+            </Button>
+            <Button 
+              variant={view === 'approved' ? 'primary' : 'outline'} 
+              size="sm"
+              onClick={() => { setView('approved'); setSelectedId(null) }}
+            >
+              <Users className="h-4 w-4 mr-2" />
+              Sürücüler ({stats.total})
+            </Button>
+            <Button 
+              variant={view === 'pending' ? 'primary' : 'outline'} 
+              size="sm"
+              onClick={() => { setView('pending'); setSelectedId(null) }}
+            >
+              <Clock className="h-4 w-4 mr-2" />
+              Başvurular ({stats.pending})
+            </Button>
+            <Button 
+              variant={view === 'rejected' ? 'primary' : 'outline'} 
+              size="sm"
+              onClick={() => { setView('rejected'); setSelectedId(null) }}
+            >
+              <XCircle className="h-4 w-4 mr-2" />
+              Reddedilenler
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => navigate('/admin/pricing')}
+            >
+              <DollarSign className="h-4 w-4 mr-2" />
+              Fiyatlandırma
+            </Button>
           </div>
         </div>
       </div>
 
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Dashboard View */}
+        {view === 'dashboard' && (
+          <div className="space-y-6">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="bg-white rounded-lg shadow p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500">Toplam Sürücü</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+                  </div>
+                  <Users className="h-8 w-8 text-blue-500" />
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500">Çevrimiçi</p>
+                    <p className="text-2xl font-bold text-green-600">{stats.online}</p>
+                  </div>
+                  <CheckCircle className="h-8 w-8 text-green-500" />
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500">Çevrimdışı</p>
+                    <p className="text-2xl font-bold text-gray-500">{stats.offline}</p>
+                  </div>
+                  <XCircle className="h-8 w-8 text-gray-400" />
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500">Bekleyen Başvuru</p>
+                    <p className="text-2xl font-bold text-yellow-600">{stats.pending}</p>
+                  </div>
+                  <Clock className="h-8 w-8 text-yellow-500" />
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500">Reddedilen</p>
+                    <p className="text-2xl font-bold text-red-600">{stats.rejected}</p>
+                  </div>
+                  <XCircle className="h-8 w-8 text-red-500" />
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Map - All Drivers */}
+            <div className="bg-white rounded-lg shadow p-4">
+              <h2 className="text-lg font-semibold mb-4">Sürücü Haritası</h2>
+              <div className="h-80 rounded-lg overflow-hidden border">
+                <OpenStreetMap
+                  center={{ lat: 36.8969, lng: 30.7133 }}
+                  customerLocation={{ lat: 36.8969, lng: 30.7133 }}
+                  drivers={approved.filter(d => d.location && (d.location.lat !== 0 || d.location.lng !== 0)).map(d => ({
+                    id: d.id,
+                    name: d.name,
+                    location: d.location!,
+                    rating: 0,
+                    available: d.available
+                  }))}
+                  onMapClick={() => {}}
+                />
+              </div>
+              <div className="mt-3 flex gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                  <span>Çevrimiçi ({stats.online})</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-gray-400"></div>
+                  <span>Çevrimdışı ({stats.offline})</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Pending Applications */}
+            {pending.length > 0 && (
+              <div className="bg-white rounded-lg shadow p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">Son Başvurular</h2>
+                  <Button variant="outline" size="sm" onClick={() => setView('pending')}>
+                    Tümünü Gör
+                  </Button>
+                </div>
+                <div className="space-y-3">
+                  {pending.slice(0, 3).map(d => (
+                    <div key={d.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div>
+                        <p className="font-medium">{d.name}</p>
+                        <p className="text-sm text-gray-500">{d.email} • {d.vehicleType}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => approveDriver(d.id)}>Onayla</Button>
+                        <Button size="sm" variant="outline" onClick={() => rejectDriver(d.id, 'Onaylanmadı')}>Reddet</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Map View - Full Screen Map */}
+        {view === 'map' && (
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Tüm Sürücüler - Canlı Harita</h2>
+              <div className="flex gap-2">
+                <select 
+                  className="border rounded px-3 py-1 text-sm"
+                  value={filterAvailable}
+                  onChange={(e) => setFilterAvailable(e.target.value as any)}
+                >
+                  <option value="all">Tümü</option>
+                  <option value="online">Çevrimiçi</option>
+                  <option value="offline">Çevrimdışı</option>
+                </select>
+              </div>
+            </div>
+            <div className="h-[500px] rounded-lg overflow-hidden border">
+              <OpenStreetMap
+                center={{ lat: 36.8969, lng: 30.7133 }}
+                customerLocation={{ lat: 36.8969, lng: 30.7133 }}
+                drivers={approved
+                  .filter(d => {
+                    if (!d.location || (d.location.lat === 0 && d.location.lng === 0)) return false
+                    if (filterAvailable === 'online' && !d.available) return false
+                    if (filterAvailable === 'offline' && d.available) return false
+                    return true
+                  })
+                  .map(d => ({
+                    id: d.id,
+                    name: d.name,
+                    location: d.location!,
+                    rating: 0,
+                    available: d.available
+                  }))}
+                  highlightDriverId={selectedId}
+                  onMapClick={(loc) => {
+                    // Find closest driver
+                    const closest = approved.reduce((prev, curr) => {
+                      if (!curr.location) return prev
+                      if (!prev?.location) return curr
+                      const dPrev = haversineMeters(loc, prev.location)
+                      const dCurr = haversineMeters(loc, curr.location)
+                      return dCurr < dPrev ? curr : prev
+                    }, null as DriverWithPricing | null)
+                    if (closest) {
+                      setSelectedId(closest.id)
+                      setDetailTab('info')
+                    }
+                  }}
+              />
+            </div>
+            
+            {/* Driver Quick List */}
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+              {approved.filter(d => d.available).map(d => (
+                <div 
+                  key={d.id}
+                  className={`p-3 border rounded-lg cursor-pointer transition ${selectedId === d.id ? 'border-blue-500 bg-blue-50' : 'hover:border-blue-300'}`}
+                  onClick={() => { setSelectedId(d.id); setDetailTab('info') }}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${d.available ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                    <span className="font-medium text-sm">{d.name}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{d.vehicleType} • {d.licensePlate || 'Plaka yok'}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* List Views (Approved, Pending, Rejected) */}
+        {(view === 'approved' || view === 'pending' || view === 'rejected') && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Driver List */}
+            <div className="bg-white rounded-lg shadow p-4 lg:col-span-2">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">
+                  {view === 'approved' && 'Onaylı Sürücüler'}
+                  {view === 'pending' && 'Onay Bekleyen Başvurular'}
+                  {view === 'rejected' && 'Reddedilen Başvurular'}
+                </h2>
+              </div>
+              
+              {/* Search & Filter */}
+              <div className="flex gap-3 mb-4">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="İsim, e-posta veya plaka ara..."
+                    className="w-full pl-10 pr-4 py-2 border rounded-lg"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                {view === 'approved' && (
+                  <select
+                    className="border rounded-lg px-3 py-2"
+                    value={filterAvailable}
+                    onChange={(e) => setFilterAvailable(e.target.value as any)}
+                  >
+                    <option value="all">Tümü</option>
+                    <option value="online">Çevrimiçi</option>
+                    <option value="offline">Çevrimdışı</option>
+                  </select>
+                )}
+              </div>
+
+              <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                {filteredList.map(d => (
+                  <div
+                    key={d.id}
+                    className={`border rounded-lg p-4 cursor-pointer transition ${selectedId === d.id ? 'border-blue-500 bg-blue-50' : 'hover:border-blue-300'}`}
+                    onClick={() => {
+                      setSelectedId(d.id)
+                      setDetailTab(view === 'pending' ? 'docs' : 'info')
+                    }}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium ${d.available ? 'bg-green-500' : 'bg-gray-400'}`}>
+                          {d.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{d.name}</p>
+                          <p className="text-sm text-gray-500">{d.email}</p>
+                          <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                            <span className="flex items-center gap-1">
+                              <Car className="h-3 w-3" />
+                              {d.vehicleType}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Truck className="h-3 w-3" />
+                              {d.licensePlate || 'Plaka yok'}
+                            </span>
+                          </div>
+                          {view === 'approved' && d.location && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              <Navigation className="h-3 w-3 inline mr-1" />
+                              {d.location.lat.toFixed(4)}, {d.location.lng.toFixed(4)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        {view === 'approved' && (
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${d.available ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                            {d.available ? 'Çevrimiçi' : 'Çevrimdışı'}
+                          </span>
+                        )}
+                        {view === 'pending' && (
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={(e) => { e.stopPropagation(); approveDriver(d.id) }}>
+                              Onayla
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); rejectDriver(d.id, rejectReason) }}>
+                              Reddet
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {filteredList.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    Kayıt bulunamadı
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Driver Detail Panel */}
+            <div className="bg-white rounded-lg shadow p-4">
+              <h2 className="text-lg font-semibold mb-4">Sürücü Detayı</h2>
+              
+              {!selectedDriver ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Users className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                  <p>Listeden bir sürücü seçin</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Tabs */}
+                  <div className="flex gap-1 flex-wrap">
+                    <Button size="sm" variant={detailTab === 'info' ? 'primary' : 'outline'} onClick={() => setDetailTab('info')}>
+                      <User className="h-3 w-3 mr-1" />Bilgi
+                    </Button>
+                    <Button size="sm" variant={detailTab === 'live' ? 'primary' : 'outline'} onClick={() => setDetailTab('live')}>
+                      <MapPin className="h-3 w-3 mr-1" />Konum
+                    </Button>
+                    <Button size="sm" variant={detailTab === 'docs' ? 'primary' : 'outline'} onClick={() => setDetailTab('docs')}>
+                      <FileText className="h-3 w-3 mr-1" />Belgeler
+                    </Button>
+                    <Button size="sm" variant={detailTab === 'pricing' ? 'primary' : 'outline'} onClick={() => setDetailTab('pricing')}>
+                      <DollarSign className="h-3 w-3 mr-1" />Fiyat
+                    </Button>
+                    <Button size="sm" variant={detailTab === 'history' ? 'primary' : 'outline'} onClick={() => setDetailTab('history')}>
+                      <Clock className="h-3 w-3 mr-1" />Geçmiş
+                    </Button>
+                  </div>
+
+                  {/* Info Tab */}
+                  {detailTab === 'info' && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3 pb-3 border-b">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${selectedDriver.available ? 'bg-green-500' : 'bg-gray-400'}`}>
+                          {selectedDriver.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900">{selectedDriver.name}</p>
+                          <p className={`text-sm ${selectedDriver.available ? 'text-green-600' : 'text-gray-500'}`}>
+                            {selectedDriver.available ? '● Çevrimiçi' : '○ Çevrimdışı'}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-4 w-4 text-gray-400" />
+                          <span>{selectedDriver.email || 'E-posta yok'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Car className="h-4 w-4 text-gray-400" />
+                          <span>{selectedDriver.vehicleType} - {selectedDriver.vehicleModel || 'Model belirtilmemiş'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Truck className="h-4 w-4 text-gray-400" />
+                          <span>{selectedDriver.licensePlate || 'Plaka yok'}</span>
+                        </div>
+                        {selectedDriver.location && (
+                          <div className="flex items-center gap-2">
+                            <Navigation className="h-4 w-4 text-gray-400" />
+                            <span>{selectedDriver.location.lat.toFixed(4)}, {selectedDriver.location.lng.toFixed(4)}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="pt-4 border-t space-y-2">
+                        {view === 'pending' && (
+                          <>
+                            <input
+                              type="text"
+                              placeholder="Red nedeni..."
+                              className="w-full border rounded px-3 py-2 text-sm"
+                              value={rejectReason}
+                              onChange={(e) => setRejectReason(e.target.value)}
+                            />
+                            <div className="flex gap-2">
+                              <Button className="flex-1" onClick={() => approveDriver(selectedDriver.id)}>Onayla</Button>
+                              <Button className="flex-1" variant="outline" onClick={() => rejectDriver(selectedDriver.id, rejectReason)}>Reddet</Button>
+                            </div>
+                          </>
+                        )}
+                        {view === 'rejected' && selectedDriver.rejectedReason && (
+                          <div className="p-3 bg-red-50 rounded text-sm text-red-700">
+                            <strong>Red Nedeni:</strong> {selectedDriver.rejectedReason}
+                          </div>
+                        )}
+                        <Button 
+                          variant="outline" 
+                          className="w-full text-red-600 border-red-200 hover:bg-red-50"
+                          onClick={() => deleteDriver(selectedDriver.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Sürücüyü Sil
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Live/Map Tab */}
+                  {detailTab === 'live' && (
+                    <div className="space-y-3">
+                      {selectedDriver.location && (selectedDriver.location.lat !== 0 || selectedDriver.location.lng !== 0) ? (
+                        <>
+                          <div className="h-48 rounded-lg overflow-hidden border">
+                            <OpenStreetMap
+                              center={selectedDriver.location}
+                              customerLocation={selectedDriver.location}
+                              destination={activeBooking?.dropoffLocation || selectedDriver.location}
+                              drivers={[{
+                                id: selectedDriver.id,
+                                name: selectedDriver.name,
+                                location: selectedDriver.location,
+                                rating: 0,
+                                available: selectedDriver.available
+                              }]}
+                              highlightDriverId={selectedDriver.id}
+                              onMapClick={() => {}}
+                            />
+                          </div>
+                          <div className="text-sm space-y-1">
+                            <p><strong>Enlem:</strong> {selectedDriver.location.lat.toFixed(6)}</p>
+                            <p><strong>Boylam:</strong> {selectedDriver.location.lng.toFixed(6)}</p>
+                            <a 
+                              href={`https://www.google.com/maps?q=${selectedDriver.location.lat},${selectedDriver.location.lng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline text-sm"
+                            >
+                              Google Maps'te Aç →
+                            </a>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-center py-8 text-gray-500">
+                          <MapPin className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                          <p>Konum bilgisi yok</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Documents Tab */}
+                  {detailTab === 'docs' && (
+                    <div className="space-y-3">
+                      {selectedDriver.docs && selectedDriver.docs.length > 0 ? (
+                        <div className="space-y-3">
+                          {selectedDriver.docs.map((doc, i) => (
+                            <div key={i} className="border rounded-lg p-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="font-medium text-sm">{doc.name}</span>
+                                <span className={`text-xs px-2 py-1 rounded ${doc.url ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                  {doc.url ? 'Yüklendi' : 'Eksik'}
+                                </span>
+                              </div>
+                              {doc.url && (
+                                <div className="flex gap-2">
+                                  <img 
+                                    src={doc.url} 
+                                    alt={doc.name} 
+                                    className="h-20 rounded border cursor-pointer hover:opacity-80"
+                                    onClick={() => setPreview({ url: doc.url!, name: doc.name })}
+                                  />
+                                  <a 
+                                    href={doc.url} 
+                                    download
+                                    className="text-xs text-blue-600 hover:underline self-end"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-gray-500">
+                          <FileText className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                          <p>Belge yok</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Pricing Tab */}
+                  {detailTab === 'pricing' && (
+                    <div className="space-y-4">
+                      <div className="p-3 bg-blue-50 rounded-lg text-sm">
+                        <p className="font-medium text-blue-800">Global Fiyatlandırma</p>
+                        <p className="text-blue-600">Kilometre: {globalPricing.driverPerKm} {globalPricing.currency}</p>
+                        <p className="text-blue-600">Platform Payı: %{globalPricing.platformFeePercent}</p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={pricingForm.customPricing}
+                            onChange={(e) => setPricingForm({ ...pricingForm, customPricing: e.target.checked })}
+                            className="rounded"
+                          />
+                          <span className="text-sm font-medium">Sürücüye Özel Fiyatlandırma</span>
+                        </label>
+
+                        {pricingForm.customPricing && (
+                          <>
+                            <div>
+                              <label className="block text-sm text-gray-600 mb-1">Kilometre Başı Ücret ({globalPricing.currency})</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                className="w-full border rounded px-3 py-2"
+                                value={pricingForm.driverPerKm}
+                                onChange={(e) => setPricingForm({ ...pricingForm, driverPerKm: parseFloat(e.target.value) || 0 })}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-600 mb-1">Platform Payı (%)</label>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                max="50"
+                                className="w-full border rounded px-3 py-2"
+                                value={pricingForm.platformFeePercent}
+                                onChange={(e) => setPricingForm({ ...pricingForm, platformFeePercent: parseFloat(e.target.value) || 0 })}
+                              />
+                            </div>
+                          </>
+                        )}
+
+                        <Button className="w-full" onClick={savePricing}>
+                          Kaydet
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* History Tab */}
+                  {detailTab === 'history' && (
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {completedBookings.length > 0 ? (
+                        completedBookings.map((b: any) => (
+                          <div key={b.id} className="border rounded-lg p-3 text-sm">
+                            <div className="font-medium">{b.reservationCode || b.id.slice(-6)}</div>
+                            <p className="text-gray-600 text-xs mt-1">
+                              {b.pickupLocation?.address?.slice(0, 30)}... → {b.dropoffLocation?.address?.slice(0, 30)}...
+                            </p>
+                            <div className="flex justify-between mt-2 text-xs">
+                              <span className="text-gray-500">{b.pickupTime ? new Date(b.pickupTime).toLocaleDateString('tr-TR') : '-'}</span>
+                              <span className="font-medium">{currencySymbol(globalPricing.currency)}{b.finalPrice || b.basePrice || 0}</span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-8 text-gray-500">
+                          <Clock className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                          <p>Geçmiş yolculuk yok</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Image Preview Modal */}
       {preview && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center" onClick={() => setPreview(null)}>
-          <div className="bg-white rounded-lg shadow-lg p-3 max-w-5xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
-            <img src={preview.url} alt={preview.name} className="w-full h-auto rounded" />
-            <div className="mt-3 flex items-center justify-between">
-              <span className="text-sm text-gray-700">{preview.name}</span>
-              <a href={preview.url} download={`belge_${preview.name}.${extFromDataUrl(preview.url)}`} className="text-blue-600 hover:underline">İndir</a>
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setPreview(null)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <img src={preview.url} alt={preview.name} className="w-full h-auto" />
+            <div className="p-4 flex items-center justify-between border-t">
+              <span className="font-medium">{preview.name}</span>
+              <div className="flex gap-2">
+                <a 
+                  href={preview.url} 
+                  download={`${preview.name}.${extFromDataUrl(preview.url)}`}
+                  className="text-blue-600 hover:underline text-sm"
+                >
+                  İndir
+                </a>
+                <button onClick={() => setPreview(null)} className="text-gray-500 hover:text-gray-700 text-sm">
+                  Kapat
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -435,3 +892,9 @@ export const AdminDrivers: React.FC = () => {
   )
 }
 
+// Missing import fix
+const User = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  </svg>
+)
