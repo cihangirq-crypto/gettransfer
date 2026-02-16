@@ -231,18 +231,17 @@ router.post('/location', async (req: Request, res: Response) => {
   }
   if (typeof available === 'boolean') d.available = available
   drivers.set(id, d)
+  
+  // SERVERLESS: Socket.io çalışmayabilir, ama yine de dene
   try { (req.app.get('io') as any)?.emit('driver:update', d) } catch {}
-  if (hasLoc) {
-    const prev = lastPersisted.get(id)
-    const shouldPersist = !prev
-      || now - prev.ts >= LOCATION_PERSIST_MIN_INTERVAL_MS
-      || haversine(prev.loc, location) >= LOCATION_PERSIST_MIN_DISTANCE_M
-    if (shouldPersist) {
-      lastPersisted.set(id, { ts: now, loc: location })
-      saveDriver(d).catch(()=>{})
-    }
+  
+  // SERVERLESS: Her konum güncellemesini ANINDA veritabanına yaz
+  // Çünkü bellek bir sonraki request'te kaybolabilir
+  if (hasLoc || typeof available === 'boolean') {
+    try { await saveDriver(d) } catch {}
   }
-  res.json({ success: true })
+  
+  res.json({ success: true, location: d.location, available: d.available })
 })
 
 router.post('/status', async (req: Request, res: Response) => {
@@ -264,7 +263,10 @@ router.post('/status', async (req: Request, res: Response) => {
   }
   d.available = !!available
   drivers.set(id, d)
-  saveDriver(d).catch(()=>{})
+  
+  // SERVERLESS: Her durum değişikliğini ANINDA veritabanına yaz
+  try { await saveDriver(d) } catch {}
+  
   res.json({ success: true, data: d })
 })
 
@@ -416,21 +418,17 @@ router.get('/pending', (_req: Request, res: Response) => {
   listDriversByStatus('pending').then(list => res.json({ success: true, data: list })).catch(()=>res.json({ success: true, data: [] }))
 })
 
-router.get('/list', (req: Request, res: Response) => {
+router.get('/list', async (req: Request, res: Response) => {
   const status = (req.query.status as string) || 'all'
   const st = status === 'approved' || status === 'pending' || status === 'rejected' ? status : 'all'
-  listDriversByStatus(st as any).then(list => {
-    const now = Date.now()
-    const merged = list.map((row: any) => {
-      const mem = drivers.get(row.id)
-      // Bellekteki sürücü varsa VE geçerli konumu varsa (0,0 değilse) onu kullan
-      if (mem && mem.location && (mem.location.lat !== 0 || mem.location.lng !== 0)) {
-        return { ...row, location: mem.location, available: mem.available }
-      }
-      return row
-    })
-    res.json({ success: true, data: merged })
-  }).catch(()=>res.json({ success: true, data: [] }))
+  
+  try {
+    // SERVERLESS: Her zaman veritabanından çek (bellek güvenilir değil)
+    const list = await listDriversByStatus(st as any)
+    res.json({ success: true, data: list })
+  } catch {
+    res.json({ success: true, data: [] })
+  }
 })
 
 router.get('/diag', async (_req: Request, res: Response) => {
