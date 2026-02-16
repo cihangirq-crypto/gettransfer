@@ -1,5 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
+import fetch from 'node-fetch'
 import { logger } from '../utils/logger.js'
+
+// Global fetch polyfill for serverless
+if (!globalThis.fetch) {
+  globalThis.fetch = fetch as any
+}
 
 const getEnv = (k: string) => {
   const v = process.env[k]

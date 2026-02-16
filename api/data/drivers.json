@@ -1,53 +1,23 @@
 [
   {
+    "id": "drv_vedat",
+    "name": "vedat",
+    "email": "vedat@test.com",
+    "vehicleType": "sedan",
+    "vehicleModel": "Araç",
+    "licensePlate": "",
+    "location": { "lat": 0, "lng": 0 },
+    "available": false,
+    "approved": true
+  },
+  {
     "id": "drv_fatih",
     "name": "fatih",
     "email": "fatih@test.com",
     "vehicleType": "sedan",
-    "vehicleModel": "Toyota Corolla Sedan",
-    "licensePlate": "34 ABC 987",
-    "docs": [
-      {
-        "name": "license"
-      },
-      {
-        "name": "vehicle_registration"
-      },
-      {
-        "name": "insurance"
-      },
-      {
-        "name": "profile_photo"
-      }
-    ],
-    "location": null,
-    "available": false,
-    "approved": true,
-    "password": "123456"
-  },
-  {
-    "id": "drv_vedat",
-    "name": "vedat",
-    "tcid": "NA",
-    "licenseNumber": "NA",
-    "vehicleType": "sedan",
-    "vehicleModel": "Toyota Corolla Sedan",
-    "licensePlate": "34 ABC 987",
-    "docs": [
-      {
-        "name": "license"
-      },
-      {
-        "name": "vehicle_registration"
-      },
-      {
-        "name": "insurance"
-      },
-      {
-        "name": "profile_photo"
-      }
-    ],
-    "location": null,
+    "vehicleModel": "Araç",
+    "licensePlate": "",
+    "location": { "lat": 0, "lng": 0 },
     "available": false,
     "approved": true
   }
