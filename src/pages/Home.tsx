@@ -1,10 +1,54 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ImmediateRideRequest } from '@/components/ImmediateRideRequest';
 import { Button } from '@/components/ui/Button';
-import { MapPin, Car, Users, Clock, Shield, Star, Navigation } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { MapPin, Clock, Shield, Star } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuthStore } from '@/stores/authStore';
+import { toast } from 'sonner';
 
 export default function Home() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { setUser, setTokens } = useAuthStore();
+
+  // Google OAuth callback handler
+  useEffect(() => {
+    const authSuccess = searchParams.get('auth_success');
+    const authError = searchParams.get('auth_error');
+    const token = searchParams.get('token');
+    const userJson = searchParams.get('user');
+
+    if (authError) {
+      toast.error('Google giriş hatası: ' + authError);
+      // URL'den parametreleri temizle
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+
+    if (authSuccess === 'true' && token && userJson) {
+      try {
+        const user = JSON.parse(decodeURIComponent(userJson));
+        setUser(user);
+        setTokens(token, 'refresh_token');
+        toast.success('Google ile giriş başarılı!');
+        
+        // URL'den parametreleri temizle
+        window.history.replaceState({}, '', window.location.pathname);
+        
+        // Yönlendir
+        if (user.role === 'admin') {
+          navigate('/admin/drivers');
+        } else if (user.role === 'driver') {
+          navigate('/driver/dashboard');
+        } else {
+          navigate('/customer/dashboard');
+        }
+      } catch (e) {
+        console.error('Google auth parse error:', e);
+        toast.error('Giriş işlenirken hata oluştu');
+      }
+    }
+  }, [searchParams, setUser, setTokens, navigate]);
 
   return (
     <div className="min-h-screen">
