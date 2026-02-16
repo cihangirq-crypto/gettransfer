@@ -405,8 +405,8 @@ router.get('/list', (req: Request, res: Response) => {
     const now = Date.now()
     const merged = list.map((row: any) => {
       const mem = drivers.get(row.id)
-      const ts = liveLocationTs.get(row.id)
-      if (mem && ts && now - ts < 2 * 60_000) {
+      // Bellekteki sürücü varsa VE geçerli konumu varsa (0,0 değilse) onu kullan
+      if (mem && mem.location && (mem.location.lat !== 0 || mem.location.lng !== 0)) {
         return { ...row, location: mem.location, available: mem.available }
       }
       return row
