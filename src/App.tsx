@@ -27,10 +27,10 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 // Loading fallback
 const LoadingFallback = () => (
-  <div className="min-h-screen flex items-center justify-center bg-gray-50">
+  <div className="min-h-screen flex items-center justify-center bg-gray-900">
     <div className="text-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-      <p className="mt-4 text-gray-600">Yükleniyor...</p>
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+      <p className="mt-4 text-gray-400">Yükleniyor...</p>
     </div>
   </div>
 )
@@ -41,7 +41,12 @@ export default function App() {
       <I18nProvider>
         <ErrorBoundary>
           <Routes>
-            {/* Driver Routes - Without main Layout, they have their own DriverLayout */}
+            {/* Auth Routes - Without main Layout */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/register/driver" element={<Register isDriver={true} />} />
+
+            {/* Driver Routes - Without main Layout */}
             <Route path="/driver/login" element={
               <Suspense fallback={<LoadingFallback />}>
                 <DriverLoginLazy />
@@ -67,6 +72,15 @@ export default function App() {
               </ProtectedRoute>
             } />
 
+            {/* Customer Routes - Without main Layout */}
+            <Route path="/customer/dashboard" element={
+              <ProtectedRoute allowedRoles={['customer']}>
+                <Suspense fallback={<LoadingFallback />}>
+                  <CustomerDashboardLazy />
+                </Suspense>
+              </ProtectedRoute>
+            } />
+
             {/* Admin Routes - Without main Layout */}
             <Route path="/admin/drivers" element={
               <ProtectedRoute allowedRoles={['admin']}>
@@ -83,15 +97,12 @@ export default function App() {
               </ProtectedRoute>
             } />
 
-            {/* Main Layout Routes - Customer facing */}
+            {/* Main Layout Routes - Public pages */}
             <Route path="*" element={
               <Layout>
                 <Routes>
                   <Route path="/" element={<Home />} />
                   <Route path="/sitemap" element={<SiteMap />} />
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/register" element={<Register />} />
-                  <Route path="/register/driver" element={<Register isDriver={true} />} />
                   <Route path="/search" element={
                     <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
                       <SearchResultsLazy />
@@ -117,13 +128,6 @@ export default function App() {
                     <ProtectedRoute>
                       <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
                         <TrackingPageLazy />
-                      </Suspense>
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/customer/dashboard" element={
-                    <ProtectedRoute allowedRoles={['customer']}>
-                      <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
-                        <CustomerDashboardLazy />
                       </Suspense>
                     </ProtectedRoute>
                   } />

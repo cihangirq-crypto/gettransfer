@@ -3,9 +3,8 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { toast } from 'sonner';
-import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Car, User, ArrowLeft } from 'lucide-react';
 
 interface LoginForm {
   email: string;
@@ -31,102 +30,112 @@ export const Login: React.FC = () => {
       await login(emailInput, data.password, desiredType);
       toast.success('Giriş başarılı!');
       
-      // Redirect to intended page or dashboard
       const from = location.state?.from?.pathname;
       if (from) {
         navigate(from);
       } else {
         const role = useAuthStore.getState().user?.role
         if (role === 'admin') navigate('/admin/drivers')
+        else if (role === 'driver') navigate('/driver/dashboard')
         else navigate('/customer/dashboard');
       }
-    } catch (error) {
-      toast.error('Giriş başarısız. Lütfen bilgilerinizi kontrol edin.');
+    } catch {
+      toast.error('Giriş başarısız. Bilgilerinizi kontrol edin.');
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <h2 className="text-3xl font-bold text-gray-900">Müşteri Girişi</h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Henüz hesabınız yok mu?{' '}
-            <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
-              Hemen kayıt olun
-            </Link>
-          </p>
+    <div className="min-h-screen bg-gray-900 flex flex-col">
+      {/* Header */}
+      <div className="p-4 flex items-center justify-between border-b border-gray-800">
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+        >
+          <ArrowLeft className="h-5 w-5" />
+          <span>Ana Sayfa</span>
+        </button>
+        <div className="flex items-center gap-2">
+          <Car className="h-6 w-6 text-blue-500" />
+          <span className="text-white font-bold">GetTransfer</span>
         </div>
+      </div>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      {/* Login Form */}
+      <div className="flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <User className="h-10 w-10 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-white">Müşteri Girişi</h2>
+            <p className="mt-2 text-gray-400">Transfer hizmetleri için giriş yapın</p>
+          </div>
 
-            <Input
-              label="E-posta adresi"
-              type="email"
-              placeholder="E-posta adresinizi girin"
-              leftIcon={<Mail className="h-5 w-5 text-gray-400" />}
-              {...register('email', {
-                required: 'E-posta adresi gereklidir',
-                pattern: {
-                  value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                  message: 'Geçerli bir e-posta adresi girin',
-                },
-              })}
-              error={errors.email?.message}
-            />
+          <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  E-posta adresi
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="email"
+                    placeholder="E-posta adresinizi girin"
+                    className="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    {...register('email', {
+                      required: 'E-posta adresi gereklidir',
+                      pattern: {
+                        value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                        message: 'Geçerli bir e-posta adresi girin',
+                      },
+                    })}
+                  />
+                </div>
+                {errors.email && (
+                  <p className="mt-1 text-sm text-red-400">{errors.email.message}</p>
+                )}
+              </div>
 
-            <div>
-              <Input
-                label="Şifre"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Şifrenizi girin"
-                leftIcon={<Lock className="h-5 w-5 text-gray-400" />}
-                rightIcon={
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  Şifre
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Şifrenizi girin"
+                    className="w-full pl-10 pr-12 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    {...register('password', {
+                      required: 'Şifre gereklidir',
+                      minLength: { value: 6, message: 'Şifre en az 6 karakter olmalıdır' },
+                    })}
+                  />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
                   >
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
-                }
-                {...register('password', {
-                  required: 'Şifre gereklidir',
-                  minLength: {
-                    value: 6,
-                    message: 'Şifre en az 6 karakter olmalıdır',
-                  },
-                })}
-                error={errors.password?.message}
-              />
-              <div className="mt-2 text-right">
-                <Link to="/forgot-password" className="text-sm text-blue-600 hover:text-blue-500">
-                  Şifrenizi mi unuttunuz?
-                </Link>
+                </div>
+                {errors.password && (
+                  <p className="mt-1 text-sm text-red-400">{errors.password.message}</p>
+                )}
               </div>
-            </div>
 
-            <Button
-              type="submit"
-              className="w-full"
-              isLoading={isLoading}
-            >
-              Giriş Yap
-            </Button>
-          </form>
+              <Button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700 py-3 text-lg"
+                isLoading={isLoading}
+              >
+                Giriş Yap
+              </Button>
+            </form>
 
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">veya</span>
-              </div>
-            </div>
-
-            {/* Google ile Giriş */}
+            {/* Google Login */}
             <div className="mt-6">
               <button
                 type="button"
@@ -136,14 +145,12 @@ export const Login: React.FC = () => {
                     toast.error('Google giriş yapılandırılmamış');
                     return;
                   }
-                  
-                  // Google OAuth redirect
                   const redirectUri = encodeURIComponent(window.location.origin + '/auth/callback');
                   const scope = encodeURIComponent('email profile');
                   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${googleClientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}`;
                   window.location.href = authUrl;
                 }}
-                className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 rounded-lg px-4 py-3 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                className="w-full flex items-center justify-center gap-3 bg-white rounded-lg px-4 py-3 text-gray-700 font-medium hover:bg-gray-100 transition-colors"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -155,11 +162,20 @@ export const Login: React.FC = () => {
               </button>
             </div>
 
-            <div className="mt-4">
-              <Link to="/register" className="w-full">
-                <Button variant="outline" className="w-full">
-                  Müşteri Kaydı
-                </Button>
+            {/* Register Link */}
+            <div className="mt-6 pt-6 border-t border-gray-700">
+              <button
+                onClick={() => navigate('/register')}
+                className="w-full py-3 text-center text-gray-400 hover:text-white border border-gray-600 rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Hesabınız yok mu? Kayıt olun
+              </button>
+            </div>
+
+            {/* Driver Login Link */}
+            <div className="mt-4 text-center">
+              <Link to="/driver/login" className="text-sm text-blue-400 hover:text-blue-300">
+                Sürücü girişi için tıklayın
               </Link>
             </div>
           </div>
@@ -168,3 +184,5 @@ export const Login: React.FC = () => {
     </div>
   );
 };
+
+export default Login;
