@@ -6,14 +6,17 @@ import OpenStreetMap from '@/components/OpenStreetMap'
 import { Button } from '@/components/ui/Button'
 import { DriverLayout } from '@/components/DriverLayout'
 import { io as ioClient, type Socket } from 'socket.io-client'
-import { MapPin, Phone, Navigation, CheckCircle, XCircle, Clock, Coffee } from 'lucide-react'
+import { MapPin, Phone, Navigation, CheckCircle, XCircle, Clock, Coffee, Settings, FileText, User, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { DEFAULT_CENTER } from '@/config/env'
+import { useNavigate } from 'react-router-dom'
 
 export const DriverDashboard = () => {
   const { me, requests, register, refreshRequests, accept, updateLocation, setAvailable, refreshApproval, earnings, fetchEarnings, approved } = useDriverStore()
   const { user } = useAuthStore()
   const { confirmPickup, appendRoutePoint, stopRouteRecordingAndSave, updateBookingStatus, saveRouteProgress } = useBookingStore()
+  const navigate = useNavigate()
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false)
 
   const [locationSource, setLocationSource] = useState<'gps' | 'ip' | 'manual' | 'none'>('none')
 
@@ -519,9 +522,42 @@ export const DriverDashboard = () => {
 
           {/* Günlük Kazanç */}
           <div className="p-4 border-t border-gray-700 bg-gray-800">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-3">
               <span className="text-gray-400 text-sm">Bugün:</span>
               <span className="text-2xl font-bold text-green-400">₺{earnings?.daily || 0}</span>
+            </div>
+            
+            {/* Ayarlar Menüsü */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-gray-300 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  <span>Ayarlar</span>
+                </div>
+                <ChevronRight className={`h-4 w-4 transition-transform ${showSettingsMenu ? 'rotate-90' : ''}`} />
+              </button>
+              
+              {showSettingsMenu && (
+                <div className="absolute bottom-full left-0 right-0 mb-2 bg-gray-700 rounded-lg border border-gray-600 shadow-xl overflow-hidden z-10">
+                  <button
+                    onClick={() => { navigate('/driver/documents'); setShowSettingsMenu(false) }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-600 text-gray-300 transition-colors"
+                  >
+                    <FileText className="h-4 w-4 text-blue-400" />
+                    <span>Belgelerim</span>
+                  </button>
+                  <button
+                    onClick={() => { navigate('/driver/profile'); setShowSettingsMenu(false) }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-600 text-gray-300 transition-colors"
+                  >
+                    <User className="h-4 w-4 text-green-400" />
+                    <span>Profilim</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
