@@ -22,6 +22,8 @@ type DriverSession = {
   id: string
   name: string
   email?: string
+  phone?: string
+  address?: string
   password?: string
   passwordHash?: string
   passwordSalt?: string
@@ -85,39 +87,106 @@ async function supabaseRequest(table: string, method: 'GET' | 'POST' | 'PATCH' |
   }
 }
 
-// Demo sürücü verisi - SADECE ilk kurulumda kullanılır
+// Demo sürücü verisi - SADECE ilk kurulumda veya Supabase çalışmadığında kullanılır
 const DEMO_DRIVERS: DriverSession[] = [
   {
-    id: 'drv_vedat',
-    name: 'vedat',
-    email: 'vedat@test.com',
+    id: 'drv_fatih',
+    name: 'Fatih Yılmaz',
+    email: 'fatih@test.com',
+    phone: '0532 555 12 34',
+    address: 'Kadıköy Mahallesi, Bağdat Caddesi No: 45, Kadıköy/İstanbul',
     password: '123456',
     vehicleType: 'sedan',
-    vehicleModel: 'Araç',
-    licensePlate: '',
-    location: { lat: 0, lng: 0 },
-    available: false, // Varsayılan olarak OFFLINE
+    vehicleModel: 'Toyota Corolla 2022',
+    licensePlate: '34 ABC 123',
+    docs: [
+      { name: 'license', url: 'https://placehold.co/400x300/1e40af/white?text=Suru+cu+Belgesi', uploadedAt: '2024-01-15T10:00:00Z', status: 'approved' },
+      { name: 'vehicle_registration', url: 'https://placehold.co/400x300/166534/white?text=Ruhsat', uploadedAt: '2024-01-15T10:05:00Z', status: 'approved' },
+      { name: 'insurance', url: 'https://placehold.co/400x300/7c3aed/white?text=Sigorta', uploadedAt: '2024-01-15T10:10:00Z', status: 'approved' },
+      { name: 'profile_photo', url: 'https://placehold.co/400x400/374151/white?text=Fatih', uploadedAt: '2024-01-15T10:15:00Z', status: 'approved' },
+    ],
+    location: { lat: 40.9819, lng: 29.0267 }, // Kadıköy
+    available: false,
     approved: true,
   },
   {
-    id: 'drv_fatih',
-    name: 'fatih',
-    email: 'fatih@test.com',
+    id: 'drv_vedat',
+    name: 'Vedat Demir',
+    email: 'vedat@test.com',
+    phone: '0533 666 78 90',
+    address: 'Beşiktaş Mahallesi, Barbaros Bulvarı No: 78, Beşiktaş/İstanbul',
     password: '123456',
-    vehicleType: 'sedan',
-    vehicleModel: 'Araç',
-    licensePlate: '',
-    location: { lat: 0, lng: 0 },
-    available: false, // Varsayılan olarak OFFLINE
+    vehicleType: 'luxury',
+    vehicleModel: 'Mercedes E-Class 2023',
+    licensePlate: '34 XYZ 456',
+    docs: [
+      { name: 'license', url: 'https://placehold.co/400x300/1e40af/white?text=Suru+cu+Belgesi', uploadedAt: '2024-02-01T09:00:00Z', status: 'approved' },
+      { name: 'vehicle_registration', url: 'https://placehold.co/400x300/166534/white?text=Ruhsat', uploadedAt: '2024-02-01T09:05:00Z', status: 'approved' },
+      { name: 'insurance', url: 'https://placehold.co/400x300/7c3aed/white?text=Sigorta', uploadedAt: '2024-02-01T09:10:00Z', status: 'approved' },
+      { name: 'profile_photo', url: 'https://placehold.co/400x400/374151/white?text=Vedat', uploadedAt: '2024-02-01T09:15:00Z', status: 'approved' },
+    ],
+    location: { lat: 41.0421, lng: 29.0093 }, // Beşiktaş
+    available: false,
     approved: true,
   }
 ]
+
+// Test sürücüleri için örnek veri (veritabanında eksikse kullanılır)
+const TEST_DRIVER_DATA: Record<string, Partial<DriverSession>> = {
+  'drv_fatih': {
+    name: 'Fatih Yılmaz',
+    phone: '0532 555 12 34',
+    address: 'Kadıköy Mahallesi, Bağdat Caddesi No: 45, Kadıköy/İstanbul',
+    vehicleModel: 'Toyota Corolla 2022',
+    licensePlate: '34 ABC 123',
+    docs: [
+      { name: 'license', url: 'https://placehold.co/400x300/1e40af/white?text=Suru+cu+Belgesi', uploadedAt: '2024-01-15T10:00:00Z', status: 'approved' as const },
+      { name: 'vehicle_registration', url: 'https://placehold.co/400x300/166534/white?text=Ruhsat', uploadedAt: '2024-01-15T10:05:00Z', status: 'approved' as const },
+      { name: 'insurance', url: 'https://placehold.co/400x300/7c3aed/white?text=Sigorta', uploadedAt: '2024-01-15T10:10:00Z', status: 'approved' as const },
+      { name: 'profile_photo', url: 'https://placehold.co/400x400/374151/white?text=Fatih', uploadedAt: '2024-01-15T10:15:00Z', status: 'approved' as const },
+    ],
+    location: { lat: 40.9819, lng: 29.0267 },
+  },
+  'drv_vedat': {
+    name: 'Vedat Demir',
+    phone: '0533 666 78 90',
+    address: 'Beşiktaş Mahallesi, Barbaros Bulvarı No: 78, Beşiktaş/İstanbul',
+    vehicleModel: 'Mercedes E-Class 2023',
+    licensePlate: '34 XYZ 456',
+    docs: [
+      { name: 'license', url: 'https://placehold.co/400x300/1e40af/white?text=Suru+cu+Belgesi', uploadedAt: '2024-02-01T09:00:00Z', status: 'approved' as const },
+      { name: 'vehicle_registration', url: 'https://placehold.co/400x300/166534/white?text=Ruhsat', uploadedAt: '2024-02-01T09:05:00Z', status: 'approved' as const },
+      { name: 'insurance', url: 'https://placehold.co/400x300/7c3aed/white?text=Sigorta', uploadedAt: '2024-02-01T09:10:00Z', status: 'approved' as const },
+      { name: 'profile_photo', url: 'https://placehold.co/400x400/374151/white?text=Vedat', uploadedAt: '2024-02-01T09:15:00Z', status: 'approved' as const },
+    ],
+    location: { lat: 41.0421, lng: 29.0093 },
+  }
+}
+
+// Test sürücülerinin eksik verilerini tamamla
+function enrichTestDriver(driver: DriverSession): DriverSession {
+  const testData = TEST_DRIVER_DATA[driver.id]
+  if (!testData) return driver
+  
+  return {
+    ...driver,
+    name: driver.name && driver.name !== 'Sürücü' ? driver.name : testData.name || driver.name,
+    phone: driver.phone || testData.phone,
+    address: driver.address || testData.address,
+    vehicleModel: driver.vehicleModel || testData.vehicleModel,
+    licensePlate: driver.licensePlate || testData.licensePlate,
+    docs: Array.isArray(driver.docs) && driver.docs.length > 0 ? driver.docs : testData.docs,
+    location: (driver.location?.lat !== 0 && driver.location?.lng !== 0) ? driver.location : (testData.location || driver.location),
+  }
+}
 
 async function sbUpsertDriver(d: DriverSession) {
   const data = {
     id: d.id,
     name: d.name,
     email: d.email || null,
+    phone: d.phone || null,
+    address: d.address || null,
     password_hash: d.passwordHash || null,
     password_salt: d.passwordSalt || null,
     vehicle_type: d.vehicleType,
@@ -151,6 +220,8 @@ export async function getDriver(id: string): Promise<DriverSession | null> {
       id: row.id,
       name: row.name || 'Sürücü',
       email: row.email || undefined,
+      phone: row.phone || undefined,
+      address: row.address || undefined,
       passwordHash: row.password_hash || undefined,
       passwordSalt: row.password_salt || undefined,
       vehicleType: row.vehicle_type,
@@ -162,8 +233,10 @@ export async function getDriver(id: string): Promise<DriverSession | null> {
       approved: !!row.approved,
       rejectedReason: row.rejected_reason || undefined,
     }
-    memory.set(id, d)
-    return d
+    // Test sürücülerinin eksik verilerini tamamla
+    const enriched = enrichTestDriver(d)
+    memory.set(id, enriched)
+    return enriched
   }
   
   return null
@@ -185,6 +258,8 @@ export async function getDriverByEmail(email: string): Promise<DriverSession | n
       id: row.id,
       name: row.name || 'Sürücü',
       email: row.email || undefined,
+      phone: row.phone || undefined,
+      address: row.address || undefined,
       passwordHash: row.password_hash || undefined,
       passwordSalt: row.password_salt || undefined,
       vehicleType: row.vehicle_type,
@@ -224,21 +299,27 @@ export async function listDriversByStatus(status: 'approved' | 'pending' | 'reje
     return []
   }
   
-  return rows.map((row: any) => ({
-    id: row.id,
-    name: row.name || 'Sürücü',
-    email: row.email || undefined,
-    passwordHash: row.password_hash || undefined,
-    passwordSalt: row.password_salt || undefined,
-    vehicleType: row.vehicle_type,
-    vehicleModel: row.vehicle_model || undefined,
-    licensePlate: row.license_plate || undefined,
-    docs: row.docs || undefined,
-    location: { lat: row.location_lat || 0, lng: row.location_lng || 0 },
-    available: !!row.available,
-    approved: !!row.approved,
-    rejectedReason: row.rejected_reason || undefined,
-  }))
+  return rows.map((row: any) => {
+    const driver: DriverSession = {
+      id: row.id,
+      name: row.name || 'Sürücü',
+      email: row.email || undefined,
+      phone: row.phone || undefined,
+      address: row.address || undefined,
+      passwordHash: row.password_hash || undefined,
+      passwordSalt: row.password_salt || undefined,
+      vehicleType: row.vehicle_type,
+      vehicleModel: row.vehicle_model || undefined,
+      licensePlate: row.license_plate || undefined,
+      docs: row.docs || undefined,
+      location: { lat: row.location_lat || 0, lng: row.location_lng || 0 },
+      available: !!row.available,
+      approved: !!row.approved,
+      rejectedReason: row.rejected_reason || undefined,
+    }
+    // Test sürücülerinin eksik verilerini tamamla
+    return enrichTestDriver(driver)
+  })
 }
 
 export async function approveDriver(id: string): Promise<void> {
