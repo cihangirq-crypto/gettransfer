@@ -375,24 +375,6 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
         </div>
       )}
 
-      {/* Legend */}
-      <div className="absolute top-4 left-4 bg-white rounded-lg shadow-lg px-3 py-2 z-[1000]">
-        <div className="text-xs space-y-1">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-            <span>Konumunuz</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-            <span>Şoförler</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-            <span>Varış</span>
-          </div>
-        </div>
-      </div>
-
       {/* Error */}
       {routeError && (
         <div className="absolute top-4 right-4 bg-yellow-100 border border-yellow-400 rounded-lg px-3 py-2 z-[1000]">
