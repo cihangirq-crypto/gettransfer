@@ -64,6 +64,19 @@ Sonra e2e testleri çalıştırın:
 ## Ortam Değişkenleri
 Geliştirme için `.env` dosyası kullanılabilir. Üretim sırlarını depoya koymayın.
 
-Kurulum ve secret yönetimi için: [SECRETS_AND_SETUP.md](file:///c:/projeler/gettransfer/docs/SECRETS_AND_SETUP.md)
+## 📚 Dokümantasyon
 
-Yeni sohbet/agent/AI ile aynı şekilde devam etmek için: [AI_WORKSPACE_RULES.md](file:///c:/projeler/gettransfer/docs/AI_WORKSPACE_RULES.md)
+| Dosya | Açıklama |
+|-------|----------|
+| [DEPLOY_GUIDE.md](./DEPLOY_GUIDE.md) | 🚀 **Vercel Deploy Rehberi** - Sık yapılan hatalar ve çözümleri |
+| [QUICK_DEPLOY.md](./QUICK_DEPLOY.md) | ⚡ Hızlı deploy kartı |
+| [SECRETS_AND_SETUP.md](./docs/SECRETS_AND_SETUP.md) | Kurulum ve secret yönetimi |
+| [AI_WORKSPACE_RULES.md](./docs/AI_WORKSPACE_RULES.md) | AI ile çalışma kuralları |
+| [AI_START_HERE.md](./AI_START_HERE.md) | Yeni sohbet için başlangıç noktası |
+
+### 🔴 Deploy Öncesi Mutlaka Oku!
+Deploy yapmadan önce [DEPLOY_GUIDE.md](./DEPLOY_GUIDE.md) dosyasındaki hataları okuyun. Tekrarlayan hataları önlemek için oluşturulmuştur.
+
+Kurulum ve secret yönetimi için: [SECRETS_AND_SETUP.md](./docs/SECRETS_AND_SETUP.md)
+
+Yeni sohbet/agent/AI ile aynı şekilde devam etmek için: [AI_WORKSPACE_RULES.md](./docs/AI_WORKSPACE_RULES.md)
