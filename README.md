@@ -1,82 +1,266 @@
-# GetTransfer
+# 🚗 GetTransfer
 
-Modern React + TypeScript + Vite tabanlı bir “anlık transfer ve sürücü takibi” uygulaması. Ön yüz (Vite React) ve arka uç (Express) birlikte çalışır; harita için OpenStreetMap/Leaflet kullanılır, e2e testler Playwright ile doğrulanır.
+Modern bir transfer ve sürücü takip uygulaması. React + Vite + Express + Supabase ile geliştirilmiştir.
 
-Yeni sohbet/agent/AI ile hızlı başlamak için: [AI_START_HERE.md](file:///c:/projeler/gettransfer/AI_START_HERE.md)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## Özellikler
-- Anlık araç çağırma akışı ve aday sürücü listesi
-- OpenStreetMap ile canlı konum ve varış noktası gösterimi
-- Basit Express tabanlı API: `auth`, `drivers`, `bookings`, `places`
-- Durum yönetimi: `zustand`
-- E2E testler: `@playwright/test`
+---
 
-## Kurulum
-1. Depoyu alın ve dizine geçin
-2. Bağımlılıkları yükleyin: `npm i`
-3. Geliştirme modunda istemci ve sunucuyu birlikte başlatın: `npm run dev`
-   - İstemci: `http://localhost:5173`
-   - API: `http://localhost:3001`
+## 📑 İçindekiler
 
-Alternatif olarak önizleme sunucusu: `npm run build` ve `npm run preview` ile `http://localhost:4173` altında derlenmiş çıktıyı çalıştırabilirsiniz.
+- [Özellikler](#-özellikler)
+- [Hızlı Başlangıç](#-hızlı-başlangıç)
+- [Kurulum](#-kurulum)
+- [Kullanım](#-kullanım)
+- [Proje Yapısı](#-proje-yapısı)
+- [API Endpoints](#-api-endpoints)
+- [Deploy](#-deploy)
+- [Test Kullanıcıları](#-test-kullanıcıları)
+- [Katkıda Bulunma](#-katkıda-bulunma)
 
-## Komutlar
-- `npm run dev`: Vite istemci + Nodemon ile Express API birlikte çalıştırılır
-- `npm run client:dev`: İstemciyi tek başına çalıştırır
-- `npm run server:dev`: API’yi tek başına çalıştırır
-- `npm run build`: Tip kontrol ve prod derleme
-- `npm run preview`: Derlenmiş çıktıyı servis eder
-- `npm run check`: TypeScript tip kontrolü
-- `npm run lint`: ESLint denetimi
-- `npm run test:e2e`: Playwright e2e testlerini çalıştırma (aşağıya bakın)
+---
 
-## API Uçları (Özet)
-- `POST /api/auth/login`: Mock oturum açma
-- `POST /api/auth/register/customer` ve `POST /api/auth/register/driver`: Mock kayıt
-- `POST /api/drivers/request`: Sürücü adaylarını döndürür
-- `GET /api/drivers/requests`: Bekleyen talepler
-- `POST /api/bookings/create`: Rezervasyon oluşturur
-- `PUT /api/bookings/:id/status`: Rezervasyon durumu günceller
-- `GET /api/places/search`: OpenStreetMap üzerinden arama
-- `POST /api/places/record`: Popüler arama etiketi kaydı
+## 🚀 Özellikler
 
-## Testler
-E2E testler `e2e` klasöründe bulunur.
+- **Anlık Transfer**: Araç çağırma ve sürücü takibi
+- **Gerçek Zamanlı Konum**: OpenStreetMap ile canlı harita
+- **Çoklu Rol**: Müşteri, Sürücü ve Admin panelleri
+- **SMS Doğrulama**: Twilio Verify entegrasyonu
+- **Ödeme**: Stripe ile online ödeme
+- **Belge Yönetimi**: Sürücü belge yükleme ve onay sistemi
 
-Önizleme sunucusunu başlatın:
-- `npm run build`
-- `npm run preview` (sunucu `http://localhost:4173`)
+---
 
-Sonra e2e testleri çalıştırın:
-- `npx playwright test -c e2e --reporter=list`
+## ⚡ Hızlı Başlangıç
 
-## Geliştirme Notları
-- Vite proxy ayarı ile istemci `http://localhost:3001` üzerindeki API’ye `/api` yolundan bağlanır
-- Harita bileşenleri `react-leaflet` ve `leaflet` kullanır
-- Kalıcı oturum için `zustand`’ın `persist` aracı kullanılır
+```bash
+# Repoyu klonla
+git clone https://github.com/cihangirq-crypto/gettransfer.git
+cd gettransfer
 
-## Dizim
-- `api`: Express uygulaması ve Vercel uyumlu fonksiyonlar
-- `src`: React istemci kaynakları (bileşenler, sayfalar, store’lar)
-- `e2e`: Playwright testleri
-- `public/dist`: Derlenmiş statik dosyalar
+# Bağımlılıkları yükle
+npm install
 
-## Ortam Değişkenleri
-Geliştirme için `.env` dosyası kullanılabilir. Üretim sırlarını depoya koymayın.
+# Geliştirme sunucusunu başlat
+npm run dev
+```
 
-## 📚 Dokümantasyon
+Tarayıcıda aç: `http://localhost:5173`
 
-| Dosya | Açıklama |
+---
+
+## 🔧 Kurulum
+
+### Gereksinimler
+
+- Node.js 18+
+- npm veya bun
+- Supabase hesabı (ücretsiz)
+- Twilio hesabı (SMS için, opsiyonel)
+
+### Adım Adım Kurulum
+
+#### 1. Environment Variables
+
+`.env` dosyası oluştur:
+
+```env
+# Supabase (Gerekli)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Twilio (Opsiyonel - SMS için)
+TWILIO_ACCOUNT_SID=your-account-sid
+TWILIO_AUTH_TOKEN=your-auth-token
+TWILIO_VERIFY_SERVICE_SID=your-verify-service-sid
+
+# Stripe (Opsiyonel - Ödeme için)
+STRIPE_SECRET_KEY=your-stripe-key
+```
+
+#### 2. Veritabanı Kurulumu
+
+Supabase SQL Editor'de `supabase/schema.sql` dosyasını çalıştır.
+
+#### 3. Bağımlılıkları Yükle
+
+```bash
+npm install
+```
+
+#### 4. Geliştirme Sunucusunu Başlat
+
+```bash
+npm run dev
+```
+
+---
+
+## 💻 Kullanım
+
+### Komutlar
+
+| Komut | Açıklama |
 |-------|----------|
-| [DEPLOY_GUIDE.md](./DEPLOY_GUIDE.md) | 🚀 **Vercel Deploy Rehberi** - Sık yapılan hatalar ve çözümleri |
-| [QUICK_DEPLOY.md](./QUICK_DEPLOY.md) | ⚡ Hızlı deploy kartı |
-| [SECRETS_AND_SETUP.md](./docs/SECRETS_AND_SETUP.md) | Kurulum ve secret yönetimi |
-| [AI_WORKSPACE_RULES.md](./docs/AI_WORKSPACE_RULES.md) | AI ile çalışma kuralları |
-| [AI_START_HERE.md](./AI_START_HERE.md) | Yeni sohbet için başlangıç noktası |
+| `npm run dev` | Geliştirme sunucusu (frontend + backend) |
+| `npm run build` | Production build |
+| `npm run preview` | Build önizleme |
+| `npm run lint` | Kod kalitesi kontrolü |
 
-### 🔴 Deploy Öncesi Mutlaka Oku!
-Deploy yapmadan önce [DEPLOY_GUIDE.md](./DEPLOY_GUIDE.md) dosyasındaki hataları okuyun. Tekrarlayan hataları önlemek için oluşturulmuştur.
+### Erişim Adresleri
 
-Kurulum ve secret yönetimi için: [SECRETS_AND_SETUP.md](./docs/SECRETS_AND_SETUP.md)
+| Servis | URL |
+|--------|-----|
+| Frontend | http://localhost:5173 |
+| Backend API | http://localhost:3005 |
 
-Yeni sohbet/agent/AI ile aynı şekilde devam etmek için: [AI_WORKSPACE_RULES.md](./docs/AI_WORKSPACE_RULES.md)
+---
+
+## 📁 Proje Yapısı
+
+```
+gettransfer/
+├── src/                    # Frontend kaynak kodları
+│   ├── components/         # React bileşenleri
+│   ├── pages/              # Sayfa bileşenleri
+│   │   ├── admin/          # Admin paneli
+│   │   ├── driver/         # Sürücü paneli
+│   │   ├── customer/       # Müşteri sayfaları
+│   │   └── auth/           # Kimlik doğrulama
+│   ├── stores/             # Zustand state yönetimi
+│   ├── types/              # TypeScript tipleri
+│   └── utils/              # Yardımcı fonksiyonlar
+│
+├── backend/                # Backend API
+│   ├── routes/             # API route'ları
+│   └── services/           # İş mantığı
+│
+├── api/                    # Vercel serverless functions
+│   └── index.ts            # Ana API handler
+│
+├── supabase/               # Veritabanı şeması
+│   └── schema.sql          # SQL şeması
+│
+├── public/                 # Statik dosyalar
+├── scripts/                # Yardımcı scriptler
+│
+├── package.json            # Proje bağımlılıkları
+├── vite.config.ts          # Vite yapılandırması
+├── vercel.json             # Vercel yapılandırması
+└── tsconfig.json           # TypeScript yapılandırması
+```
+
+---
+
+## 🔌 API Endpoints
+
+### Kimlik Doğrulama
+- `POST /api/auth/login` - Giriş
+- `POST /api/auth/register/customer` - Müşteri kaydı
+- `POST /api/auth/register/driver` - Sürücü kaydı
+
+### Sürücüler
+- `POST /api/drivers/apply` - Sürücü başvurusu
+- `POST /api/drivers/auth` - Sürücü girişi
+- `GET /api/drivers/:id` - Sürücü detayı
+- `POST /api/drivers/location` - Konum güncelleme
+
+### Rezervasyonlar
+- `POST /api/bookings/create` - Rezervasyon oluştur
+- `GET /api/bookings/:id` - Rezervasyon detayı
+- `PUT /api/bookings/:id/status` - Durum güncelle
+
+### Admin
+- `GET /api/drivers/pending` - Bekleyen sürücüler
+- `POST /api/drivers/approve` - Sürücü onayla
+- `POST /api/drivers/reject` - Sürücü reddet
+
+---
+
+## 🚀 Deploy
+
+### Vercel'a Deploy
+
+#### Yöntem 1: GitHub Actions (Otomatik)
+
+1. GitHub repository'sine şu secret'ları ekle:
+   - `VERCEL_TOKEN`
+   - `VERCEL_ORG_ID`: `team_yHUUI3ESg2rXfdV2V7JfM7zn`
+   - `VERCEL_PROJECT_ID`: `prj_nmgGq9bUyhqcgwpWDA4oHwPcR679`
+
+2. `main` branch'ine push yap, otomatik deploy olur.
+
+#### Yöntem 2: CLI ile Manuel Deploy
+
+```bash
+# Build al
+npm run build
+
+# Vercel'a deploy et
+VERCEL_PROJECT_ID=prj_nmgGq9bUyhqcgwpWDA4oHwPcR679 \
+VERCEL_ORG_ID=team_yHUUI3ESg2rXfdV2V7JfM7zn \
+npx vercel --token "YOUR_TOKEN" --prod --yes
+```
+
+### Vercel Ayarları
+
+| Ayar | Değer |
+|------|-------|
+| Framework | Diğer (Vite) |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+| Install Command | `npm install` |
+
+---
+
+## 👤 Test Kullanıcıları
+
+### Sürücü Girişi
+
+| E-posta | Şifre | Ad | Araç |
+|---------|-------|-----|------|
+| fatih@test.com | 123456 | Fatih Yılmaz | Toyota Corolla (Sedan) |
+| vedat@test.com | 123456 | Vedat Demir | Mercedes E-Class (Luxury) |
+
+### Admin Girişi
+
+- Henüz admin paneli şifresiz erişilebilir (geliştirme modu)
+
+---
+
+## 🤝 Katkıda Bulunma
+
+1. Bu repoyu fork'layın
+2. Feature branch oluşturun (`git checkout -b feature/yeni-ozellik`)
+3. Değişikliklerinizi commit'leyin (`git commit -m 'Yeni özellik eklendi'`)
+4. Branch'i push'layın (`git push origin feature/yeni-ozellik`)
+5. Pull Request açın
+
+---
+
+## 📝 Notlar
+
+### Önemli Dosyalar
+
+- `vercel.json` - Vercel yapılandırması
+- `vite.config.ts` - Vite yapılandırması
+- `supabase/schema.sql` - Veritabanı şeması
+
+### Güvenlik
+
+- API key'ler asla repo'ya commit edilmez
+- `.env` dosyası `.gitignore`'da
+- Production'da tüm secret'lar Vercel Environment Variables'da
+
+---
+
+## 📄 Lisans
+
+MIT License - Detaylar için [LICENSE](LICENSE) dosyasına bakın.
+
+---
+
+## 📞 İletişim
+
+Sorularınız için GitHub Issues kullanabilirsiniz.

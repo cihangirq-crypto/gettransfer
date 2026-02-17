@@ -1,2 +1,41 @@
-.vercel
+# Dependencies
 node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Vercel
+.vercel/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Database
+db/*.db
+db/*.sqlite
+
+# Uploads (temporary)
+upload/
+
+# Test coverage
+coverage/
+
+# TypeScript cache
+*.tsbuildinfo
