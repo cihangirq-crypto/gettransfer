@@ -1,7 +1,6 @@
 {
-  "framework": null,
+  "buildCommand": "npm install && npx vite build",
   "outputDirectory": "dist",
-  "buildCommand": "node ./node_modules/vite/bin/vite.js build",
   "rewrites": [
     {
       "source": "/api/(.*)",

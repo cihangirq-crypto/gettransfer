@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "client:dev": "node ./node_modules/vite/bin/vite.js",
-    "build": "node ./node_modules/vite/bin/vite.js build",
+    "client:dev": "vite",
+    "build": "npx vite build",
     "start": "tsx server-local.ts",
     "lint": "eslint .",
     "preview": "vite preview",
