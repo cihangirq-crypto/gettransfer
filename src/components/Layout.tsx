@@ -11,10 +11,8 @@ import {
   Menu, 
   X,
   LogOut,
-  Settings,
-  History,
-  ChevronRight,
-  ArrowLeft
+  ArrowLeft,
+  ChevronRight
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -29,38 +27,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { t } = useI18n();
 
   const isActive = (path: string) => location.pathname === path;
-
-  const navigation = [
-    { name: t('nav.home'), href: '/', icon: Car },
-    { name: t('nav.search'), href: '/search', icon: MapPin },
-    { name: 'Rezervasyon', href: '/reserve', icon: History },
-    { name: 'Site Haritası', href: '/sitemap', icon: Settings },
-  ];
-
-  const customerNavigation = [
-    { name: 'Rezervasyonlar', href: '/reservations', icon: History },
-    { name: t('customer.reservations'), href: '/customer/dashboard', icon: History },
-    { name: t('profile'), href: '/profile', icon: User },
-  ];
-
-  const driverNavigation = [
-    { name: t('driver.panel'), href: '/driver/dashboard', icon: Car },
-    { name: t('driver.documents'), href: '/driver/documents', icon: Settings },
-    { name: t('profile'), href: '/profile', icon: User },
-  ];
-
-  const adminNavigation = [
-    { name: 'Admin • Sürücüler', href: '/admin/drivers', icon: Settings },
-    { name: 'Admin • Fiyatlandırma', href: '/admin/pricing', icon: Settings },
-    { name: t('profile'), href: '/profile', icon: User },
-  ];
-
-  const getUserNavigation = () => {
-    if (!user) return [];
-    if (user.role === 'admin') return adminNavigation;
-    if (user.role === 'driver') return driverNavigation;
-    return customerNavigation;
-  };
 
   const crumbs = React.useMemo(() => {
     const parts = location.pathname.split('/').filter(Boolean)
@@ -98,66 +64,46 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, [location.pathname])
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-900">
       {/* Navigation */}
-      <nav className="bg-white shadow-sm border-b">
+      <nav className="bg-gray-800 border-b border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
             <Link to="/" className="flex items-center space-x-2">
-              <Car className="h-8 w-8 text-blue-600" />
-              <span className="text-xl font-bold text-gray-900">{t('brand')}</span>
-              <span className="text-xs text-gray-500">Build: {typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : ''}</span>
+              <Car className="h-8 w-8 text-blue-500" />
+              <span className="text-xl font-bold text-white">{t('brand')}</span>
             </Link>
 
             {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center space-x-8">
-              {navigation.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    className={`flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      isActive(item.href)
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span>{item.name}</span>
-                  </Link>
-                );
-              })}
-            </div>
-
-            {/* User Menu */}
             <div className="hidden md:flex items-center space-x-4">
               <LanguageSwitcher />
+              
               {user ? (
                 <div className="flex items-center space-x-4">
-                  {getUserNavigation().map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.name}
-                        to={item.href}
-                        className={`flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                          isActive(item.href)
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        <span>{item.name}</span>
-                      </Link>
-                    );
-                  })}
+                  {/* Kullanıcı Adı */}
+                  <div className="flex items-center gap-2 text-gray-300">
+                    <User className="h-4 w-4" />
+                    <span className="text-sm">{user.name}</span>
+                  </div>
+                  
+                  {/* Panel Butonu */}
+                  <Link to={
+                    user.role === 'admin' ? '/admin/drivers' :
+                    user.role === 'driver' ? '/driver/dashboard' :
+                    '/customer/dashboard'
+                  }>
+                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+                      Panel
+                    </Button>
+                  </Link>
+                  
+                  {/* Çıkış */}
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={logout}
-                    className="text-gray-600 hover:text-gray-900"
+                    className="text-gray-400 hover:text-white"
                   >
                     <LogOut className="h-4 w-4 mr-1" />
                     {t('auth.logout')}
@@ -166,17 +112,17 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               ) : (
                 <div className="flex items-center space-x-2">
                   <Link to="/driver/login">
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" className="border-gray-600 text-gray-300 hover:bg-gray-700">
                       {t('auth.driverLogin')}
                     </Button>
                   </Link>
                   <Link to="/login">
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" className="border-gray-600 text-gray-300 hover:bg-gray-700">
                       {t('auth.login')}
                     </Button>
                   </Link>
                   <Link to="/register">
-                    <Button size="sm">
+                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
                       {t('auth.register')}
                     </Button>
                   </Link>
@@ -190,6 +136,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 variant="ghost"
                 size="sm"
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className="text-gray-300"
               >
                 {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
               </Button>
@@ -199,110 +146,85 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         {/* Mobile Navigation */}
         {isMenuOpen && (
-          <div className="md:hidden bg-white border-t">
-            <div className="px-2 pt-2 pb-3 space-y-1">
-              {navigation.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    className={`flex items-center space-x-2 px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                      isActive(item.href)
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                    }`}
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    <Icon className="h-5 w-5" />
-                    <span>{item.name}</span>
-                  </Link>
-                );
-              })}
-              
-              {user && getUserNavigation().map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    className={`flex items-center space-x-2 px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                      isActive(item.href)
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                    }`}
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    <Icon className="h-5 w-5" />
-                    <span>{item.name}</span>
-                  </Link>
-                );
-              })}
-
+          <div className="md:hidden bg-gray-800 border-t border-gray-700">
+            <div className="px-4 py-3 space-y-2">
               {user && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    logout();
-                    setIsMenuOpen(false);
-                  }}
-                  className="w-full justify-start text-gray-600 hover:text-gray-900"
-                >
-                  <LogOut className="h-5 w-5 mr-2" />
-                  {t('auth.logout')}
-                </Button>
+                <div className="flex items-center gap-2 text-gray-300 py-2 border-b border-gray-700 mb-2">
+                  <User className="h-4 w-4" />
+                  <span>{user.name}</span>
+                </div>
               )}
-            </div>
-            
-              {!user && (
-                <div className="px-2 py-3 space-y-2 border-t">
-                  <Link to="/driver/login" onClick={() => setIsMenuOpen(false)}>
-                    <Button variant="outline" className="w-full">
-                      {t('auth.driverLogin')}
-                    </Button>
+              
+              {user ? (
+                <>
+                  <Link
+                    to={
+                      user.role === 'admin' ? '/admin/drivers' :
+                      user.role === 'driver' ? '/driver/dashboard' :
+                      '/customer/dashboard'
+                    }
+                    onClick={() => setIsMenuOpen(false)}
+                    className="block px-3 py-2 text-gray-300 hover:bg-gray-700 rounded-lg"
+                  >
+                    Panel
                   </Link>
+                  <button
+                    onClick={() => { logout(); setIsMenuOpen(false); }}
+                    className="w-full text-left px-3 py-2 text-red-400 hover:bg-gray-700 rounded-lg"
+                  >
+                    {t('auth.logout')}
+                  </button>
+                </>
+              ) : (
+                <>
                   <Link to="/login" onClick={() => setIsMenuOpen(false)}>
-                    <Button variant="outline" className="w-full">
+                    <Button variant="outline" className="w-full border-gray-600 text-gray-300">
                       {t('auth.login')}
                     </Button>
                   </Link>
                   <Link to="/register" onClick={() => setIsMenuOpen(false)}>
-                    <Button className="w-full">
+                    <Button className="w-full bg-blue-600 hover:bg-blue-700">
                       {t('auth.register')}
                     </Button>
                   </Link>
-                </div>
+                  <Link to="/driver/login" onClick={() => setIsMenuOpen(false)}>
+                    <Button variant="ghost" className="w-full text-gray-400">
+                      {t('auth.driverLogin')}
+                    </Button>
+                  </Link>
+                </>
               )}
             </div>
+          </div>
         )}
-        </nav>
+      </nav>
 
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="h-12 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm text-gray-600 overflow-hidden">
+      {/* Breadcrumb */}
+      {crumbs.length > 0 && (
+        <div className="bg-gray-800/50 border-b border-gray-700">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="h-10 flex items-center gap-2 text-sm text-gray-400 overflow-x-auto">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => navigate(-1)}
-                className="text-gray-600 hover:text-gray-900"
+                className="text-gray-400 hover:text-white"
               >
                 <ArrowLeft className="h-4 w-4 mr-1" />
                 Geri
               </Button>
-              <ChevronRight className="h-4 w-4 text-gray-300" />
-              <Link to="/" className="hover:text-gray-900 whitespace-nowrap">Ana Sayfa</Link>
+              <ChevronRight className="h-4 w-4 text-gray-600" />
+              <Link to="/" className="hover:text-white whitespace-nowrap">Ana Sayfa</Link>
               {crumbs.map((c) => (
                 <span key={c.href} className="flex items-center min-w-0">
-                  <ChevronRight className="h-4 w-4 text-gray-300 mx-2 flex-shrink-0" />
-                  <Link to={c.href} className="hover:text-gray-900 truncate">{c.label}</Link>
+                  <ChevronRight className="h-4 w-4 text-gray-600 mx-2 flex-shrink-0" />
+                  <Link to={c.href} className="hover:text-white truncate">{c.label}</Link>
                 </span>
               ))}
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Main Content */}
       <main className="flex-1">
@@ -310,44 +232,44 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       </main>
 
       {/* Footer */}
-      <footer className="bg-gray-900 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <footer className="bg-gray-800 border-t border-gray-700">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center space-x-2 mb-4">
-                <Car className="h-8 w-8 text-blue-400" />
-              <span className="text-xl font-bold">{t('brand')}</span>
+                <Car className="h-6 w-6 text-blue-500" />
+                <span className="text-lg font-bold text-white">{t('brand')}</span>
               </div>
-              <p className="text-gray-400">
+              <p className="text-gray-400 text-sm">
                 Güvenilir ve konforlu transfer hizmetleri için tek adresiniz.
               </p>
             </div>
             <div>
-              <h3 className="text-lg font-semibold mb-4">{t('footer.customers')}</h3>
-              <ul className="space-y-2 text-gray-400">
+              <h3 className="text-white font-semibold mb-3">{t('footer.customers')}</h3>
+              <ul className="space-y-2 text-gray-400 text-sm">
                 <li><Link to="/search" className="hover:text-white transition-colors">{t('footer.search')}</Link></li>
                 <li><Link to="/customer/dashboard" className="hover:text-white transition-colors">{t('footer.reservations')}</Link></li>
                 <li><Link to="/register" className="hover:text-white transition-colors">{t('footer.register')}</Link></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-lg font-semibold mb-4">{t('footer.drivers')}</h3>
-              <ul className="space-y-2 text-gray-400">
+              <h3 className="text-white font-semibold mb-3">{t('footer.drivers')}</h3>
+              <ul className="space-y-2 text-gray-400 text-sm">
                 <li><Link to="/register/driver" className="hover:text-white transition-colors">{t('footer.beDriver')}</Link></li>
                 <li><Link to="/driver/dashboard" className="hover:text-white transition-colors">{t('footer.driverPanel')}</Link></li>
                 <li><Link to="/driver/documents" className="hover:text-white transition-colors">{t('footer.documents')}</Link></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-lg font-semibold mb-4">{t('footer.help')}</h3>
-              <ul className="space-y-2 text-gray-400">
+              <h3 className="text-white font-semibold mb-3">{t('footer.help')}</h3>
+              <ul className="space-y-2 text-gray-400 text-sm">
                 <li><Link to="/help" className="hover:text-white transition-colors">{t('footer.helpCenter')}</Link></li>
                 <li><Link to="/contact" className="hover:text-white transition-colors">{t('footer.contact')}</Link></li>
                 <li><Link to="/terms" className="hover:text-white transition-colors">{t('footer.terms')}</Link></li>
               </ul>
             </div>
           </div>
-          <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
+          <div className="border-t border-gray-700 mt-8 pt-6 text-center text-gray-500 text-sm">
             <p>&copy; 2024 {t('brand')}. {t('footer.copy')}</p>
           </div>
         </div>

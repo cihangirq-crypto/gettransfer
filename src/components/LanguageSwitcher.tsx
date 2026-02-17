@@ -10,7 +10,7 @@ export const LanguageSwitcher: React.FC = () => {
     <select
       value={saved === 'auto' ? 'auto' : lang}
       onChange={(e)=>setLang(e.target.value)}
-      className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+      className="bg-gray-700 border border-gray-600 rounded-md px-2 py-1 text-sm text-gray-200"
     >
       <option value="auto">{t('lang.auto')}</option>
       <option value="tr">{t('lang.tr')}</option>

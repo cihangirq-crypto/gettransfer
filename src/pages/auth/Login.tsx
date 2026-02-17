@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuthStore } from '@/stores/authStore';
@@ -12,89 +12,51 @@ interface LoginForm {
   password: string;
 }
 
-// Google Sign-In types
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize: (config: unknown) => void;
-          prompt: () => void;
-          renderButton: (element: HTMLElement | null, config: unknown) => void;
-        };
-      };
-    };
-  }
-}
-
 export const Login: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const { login, isLoading, setUser, setTokens } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>();
 
-  // Handle Google credential response
-  const handleGoogleCredential = useCallback(async (response: { credential: string }) => {
-    if (!response.credential) return;
-    
-    setGoogleLoading(true);
-    try {
-      const res = await fetch(`${API}/auth/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential: response.credential }),
-      });
+  // Handle OAuth callback from Google
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authSuccess = params.get('auth_success');
+    const authError = params.get('auth_error');
+    const token = params.get('token');
+    const userJson = params.get('user');
 
-      const data = await res.json();
-      
-      if (data.success && data.data) {
-        setUser(data.data.user);
-        setTokens(data.data.token, data.data.refreshToken);
+    if (authError) {
+      toast.error('Google giriş hatası: ' + authError);
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+
+    if (authSuccess === 'true' && token && userJson) {
+      try {
+        const user = JSON.parse(decodeURIComponent(userJson));
+        setUser(user);
+        setTokens(token, 'refresh_' + token);
         toast.success('Google ile giriş başarılı!');
-        
-        const role = data.data.user?.role;
+
+        // Clean URL
+        window.history.replaceState({}, '', window.location.pathname);
+
+        // Redirect based on role
+        const role = user?.role;
         if (role === 'admin') navigate('/admin/drivers');
         else if (role === 'driver') navigate('/driver/dashboard');
         else navigate('/customer/dashboard');
-      } else {
-        toast.error(data.error || 'Google giriş hatası');
+      } catch (e) {
+        console.error('Parse user error:', e);
+        toast.error('Kullanıcı bilgileri alınamadı');
       }
-    } catch (err) {
-      console.error('Google auth error:', err);
-      toast.error('Google giriş hatası');
-    } finally {
-      setGoogleLoading(false);
     }
   }, [setUser, setTokens, navigate]);
-
-  // Google One Tap initialization
-  useEffect(() => {
-    // Load Google Sign-In script
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    document.head.appendChild(script);
-
-    script.onload = () => {
-      if (window.google) {
-        window.google.accounts.id.initialize({
-          client_id: '123456789012-abcdefghijklmnopqrstuvwxyz123456.apps.googleusercontent.com', // Will be replaced by actual client ID
-          callback: handleGoogleCredential,
-          auto_select: false,
-        });
-      }
-    };
-
-    return () => {
-      if (document.head.contains(script)) {
-        document.head.removeChild(script);
-      }
-    };
-  }, [handleGoogleCredential]);
 
   const onSubmit = async (data: LoginForm) => {
     try {
@@ -218,8 +180,9 @@ export const Login: React.FC = () => {
                 type="button"
                 disabled={googleLoading}
                 onClick={() => {
-                  // Backend Google OAuth endpoint'ine yönlendir
-                  window.location.href = '/api/auth/google?redirect=' + encodeURIComponent(window.location.origin + '/customer/dashboard');
+                  setGoogleLoading(true);
+                  // Backend Google OAuth endpoint'ine yönlendir - callback login sayfasına dönecek
+                  window.location.href = '/api/auth/google?redirect=' + encodeURIComponent(window.location.origin + '/login');
                 }}
                 className="w-full flex items-center justify-center gap-3 bg-white rounded-lg px-4 py-3 text-gray-700 font-medium hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >

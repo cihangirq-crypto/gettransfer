@@ -41,6 +41,9 @@ export default function App() {
       <I18nProvider>
         <ErrorBoundary>
           <Routes>
+            {/* Home - Without Layout */}
+            <Route path="/" element={<Home />} />
+
             {/* Auth Routes - Without main Layout */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
@@ -101,7 +104,6 @@ export default function App() {
             <Route path="*" element={
               <Layout>
                 <Routes>
-                  <Route path="/" element={<Home />} />
                   <Route path="/sitemap" element={<SiteMap />} />
                   <Route path="/search" element={
                     <Suspense fallback={<div style={{padding:16}}>Yükleniyor...</div>}>
