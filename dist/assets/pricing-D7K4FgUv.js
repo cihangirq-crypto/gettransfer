@@ -1,0 +1,1 @@
+const t=r=>Math.round(r*100)/100,i=(r,e)=>{const n=t(Math.max(0,r)),o=Math.max(0,Number(e.driverPerKm||0)),a=Math.max(0,Number(e.platformFeePercent||0)),c=t(n*o),s=t(c*(1+a/100)),m=t(s-c),u=t(o*(1+a/100));return{distanceKm:n,driverFare:c,platformFee:m,total:s,currency:e.currency,customerPerKm:u}},d=r=>String(r).toUpperCase()==="TRY"?"₺":"€";export{i as a,d as c};

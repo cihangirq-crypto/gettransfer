@@ -7,6 +7,14 @@ import { getPricingConfig } from '../services/pricingStorage.js'
 
 const router = Router()
 
+type DriverDoc = {
+  name: string
+  url?: string
+  uploadedAt?: string
+  status?: 'pending' | 'approved' | 'rejected'
+  rejectReason?: string
+}
+
 type DriverSession = {
   id: string
   name: string
@@ -19,7 +27,7 @@ type DriverSession = {
   vehicleType: 'sedan' | 'suv' | 'van' | 'luxury'
   vehicleModel?: string
   licensePlate?: string
-  docs?: Array<{ name: string, url?: string }>
+  docs?: DriverDoc[]
   location: { lat: number, lng: number }
   available: boolean
   approved: boolean
