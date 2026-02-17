@@ -160,7 +160,24 @@ export default function App() {
             } />
           </Routes>
         </ErrorBoundary>
-        <Toaster position="top-right" />
+        <Toaster 
+          position="bottom-right"
+          toastOptions={{
+            duration: 3000,
+            style: {
+              background: '#1f2937',
+              color: '#fff',
+              border: '1px solid #374151',
+              borderRadius: '8px',
+            },
+            success: {
+              iconTheme: { primary: '#22c55e', secondary: '#fff' }
+            },
+            error: {
+              iconTheme: { primary: '#ef4444', secondary: '#fff' }
+            }
+          }}
+        />
       </I18nProvider>
     </Router>
   );

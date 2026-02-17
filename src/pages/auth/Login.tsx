@@ -41,7 +41,6 @@ export const Login: React.FC = () => {
         const user = JSON.parse(decodeURIComponent(userJson));
         setUser(user);
         setTokens(token, 'refresh_' + token);
-        toast.success('Google ile giriş başarılı!');
 
         // Clean URL
         window.history.replaceState({}, '', window.location.pathname);
@@ -63,11 +62,9 @@ export const Login: React.FC = () => {
       let emailInput = (data.email || '').trim().toLowerCase()
       if (emailInput === 'admin@gettrasfer.com' || emailInput === 'admin@gettranfer.com' || emailInput === 'admin@gettransfer.co') {
         emailInput = 'admin@gettransfer.com'
-        toast.info('admin@gettransfer.com olarak düzeltildi')
       }
       const desiredType = (emailInput === 'admin' || emailInput === 'admin@gettransfer.com') ? 'admin' : 'customer'
       await login(emailInput, data.password, desiredType);
-      toast.success('Giriş başarılı!');
       
       const from = location.state?.from?.pathname;
       if (from) {

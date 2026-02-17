@@ -21,12 +21,10 @@ export const DriverLogin: React.FC = () => {
       let emailInput = (data.email || '').trim().toLowerCase()
       if (emailInput === 'admin@gettrasfer.com' || emailInput === 'admin@gettranfer.com' || emailInput === 'admin@gettransfer.co') {
         emailInput = 'admin@gettransfer.com'
-        toast.info('admin@gettransfer.com olarak düzeltildi')
       }
       const isAdmin = (emailInput === 'admin' || emailInput === 'admin@gettransfer.com') && data.password === '12345678'
       if (isAdmin) {
         await login(emailInput, data.password, 'admin')
-        toast.success('Admin girişi başarılı')
         navigate('/admin/drivers')
       } else {
         const res = await fetch('/api/drivers/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: emailInput, password: data.password }) })
@@ -34,7 +32,6 @@ export const DriverLogin: React.FC = () => {
         if (!res.ok || !j.success) throw new Error('invalid_credentials')
         useAuthStore.getState().setUser({ id: j.data.id, email: emailInput, name: 'Sürücü', phone: '', role: 'driver', isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
         useAuthStore.getState().setTokens('mock-token', 'mock-refresh')
-        toast.success('Sürücü girişi başarılı')
         navigate('/driver/dashboard')
       }
     } catch {
