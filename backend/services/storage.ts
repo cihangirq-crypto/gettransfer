@@ -200,7 +200,12 @@ async function sbUpsertDriver(d: DriverSession) {
     rejected_reason: d.rejectedReason || null,
   }
   
-  await supabaseRequest('drivers', 'UPSERT', data)
+  // on_conflict parametresi ile UPSERT - id kolonunda çakışma olursa güncelle
+  const result = await supabaseRequest('drivers', 'UPSERT', data, 'on_conflict=id')
+  if (!result) {
+    console.error('Failed to upsert driver:', d.id)
+  }
+  return result
 }
 
 export async function saveDriver(d: DriverSession) {

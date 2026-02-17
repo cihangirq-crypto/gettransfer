@@ -119,7 +119,7 @@ router.post('/clean-stale-requests', (_req: Request, res: Response) => {
     res.json({ success: true, message: 'All stale requests cleared' })
 })
 
-router.post('/apply', (req: Request, res: Response) => {
+router.post('/apply', async (req: Request, res: Response) => {
   const { name, email, password, phone, address, vehicleType, vehicleModel, licensePlate, docs, location } = req.body || {}
   // Konum ZORUNLU - gerçek konum olmadan kayıt yapılamaz
   if (!name || !email || typeof password !== 'string' || password.length < 6 || !phone || !address || !vehicleType || !location || !isValidLatLng(location)) {
@@ -153,8 +153,18 @@ router.post('/apply', (req: Request, res: Response) => {
     approved: false,
   }
   drivers.set(id, d)
+  
+  // Veritabanına kaydet - hata durumunda logla ama devam et
+  try {
+    await saveDriver(d)
+    console.log('Driver saved to database:', id)
+  } catch (e) {
+    console.error('Failed to save driver:', id, e)
+  }
+  
+  // Admin'e bildir
   try { (req.app.get('io') as any)?.emit('driver:applied', d) } catch {}
-  saveDriver(d).catch(()=>{})
+  
   res.json({ success: true, data: d })
 })
 
