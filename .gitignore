@@ -10,8 +10,9 @@ build/
 .env.local
 .env.*.local
 
-# Vercel
+# Vercel (project.json hariç - proje ID'si gerekli)
 .vercel/
+!.vercel/project.json
 
 # IDE
 .idea/

@@ -180,6 +180,19 @@ gettransfer/
 
 ## 🚀 Deploy
 
+### ⚠️ ÖNEMLİ: Doğru Projeye Deploy
+
+Bu proje **sadece** `gettransfer` Vercel projesine deploy edilmelidir.
+
+| Ayar | Değer |
+|------|-------|
+| **Proje Adı** | gettransfer |
+| **Project ID** | `prj_nmgGq9bUyhqcgwpWDA4oHwPcR679` |
+| **Org ID** | `team_yHUUI3ESg2rXfdV2V7JfM7zn` |
+| **Production URL** | https://gettransfer.vercel.app |
+
+`.vercel/project.json` dosyası bu bilgileri içerir ve git'e dahil edilmiştir. **Bu dosyayı silmeyin veya değiştirmeyin!**
+
 ### Vercel'a Deploy
 
 #### Yöntem 1: GitHub Actions (Otomatik)
@@ -194,14 +207,14 @@ gettransfer/
 #### Yöntem 2: CLI ile Manuel Deploy
 
 ```bash
-# Build al
+# Build al (opsiyonel, Vercel otomatik yapar)
 npm run build
 
-# Vercel'a deploy et
-VERCEL_PROJECT_ID=prj_nmgGq9bUyhqcgwpWDA4oHwPcR679 \
-VERCEL_ORG_ID=team_yHUUI3ESg2rXfdV2V7JfM7zn \
-npx vercel --token "YOUR_TOKEN" --prod --yes
+# Vercel CLI ile deploy
+npx vercel --prod --yes
 ```
+
+**ÖNEMLİ**: Eğer Vercel CLI yanlış proje sorarsa, `.vercel/project.json` dosyasının doğru olduğundan emin olun!
 
 ### Vercel Ayarları
 
@@ -211,6 +224,7 @@ npx vercel --token "YOUR_TOKEN" --prod --yes
 | Build Command | `npm run build` |
 | Output Directory | `dist` |
 | Install Command | `npm install` |
+| Node.js Version | 18.x veya 20.x |
 
 ---
 
