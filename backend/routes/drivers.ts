@@ -548,6 +548,128 @@ router.get('/complaints', (_req: Request, res: Response) => {
   res.json({ success: true, data: complaints })
 })
 
+// Sürücü belge yükleme/güncelleme
+router.post('/upload-docs', async (req: Request, res: Response) => {
+  const { driverId, docs } = req.body || {}
+  
+  if (!driverId || !Array.isArray(docs)) {
+    res.status(400).json({ success: false, error: 'invalid_payload' })
+    return
+  }
+
+  try {
+    // Sürücüyü getir
+    let d = drivers.get(driverId)
+    if (!d) {
+      d = await getDriver(driverId) as DriverSession | undefined
+      if (d) drivers.set(driverId, d)
+    }
+
+    if (!d) {
+      res.status(404).json({ success: false, error: 'driver_not_found' })
+      return
+    }
+
+    // Mevcut belgeleri merge et
+    const existingDocs = Array.isArray(d.docs) ? [...d.docs] : []
+    
+    for (const newDoc of docs) {
+      const idx = existingDocs.findIndex(e => e.name === newDoc.name)
+      if (idx >= 0) {
+        if (newDoc.url && newDoc.url.length > 0) {
+          // Güncelle
+          existingDocs[idx] = {
+            ...existingDocs[idx],
+            url: newDoc.url,
+            uploadedAt: new Date().toISOString(),
+            status: 'pending'
+          }
+        } else {
+          // Sil
+          existingDocs.splice(idx, 1)
+        }
+      } else if (newDoc.url && newDoc.url.length > 0) {
+        // Yeni ekle
+        existingDocs.push({
+          name: newDoc.name,
+          url: newDoc.url,
+          uploadedAt: new Date().toISOString(),
+          status: 'pending'
+        })
+      }
+    }
+
+    d.docs = existingDocs
+    drivers.set(driverId, d)
+    
+    // Veritabanına kaydet
+    await saveDriver(d)
+
+    // Socket ile admin'e bildir
+    try { 
+      (req.app.get('io') as any)?.emit('driver:docs-updated', { driverId, docs: existingDocs }) 
+    } catch {}
+
+    res.json({ success: true, data: { docs: existingDocs } })
+  } catch (err) {
+    console.error('Belge yükleme hatası:', err)
+    res.status(500).json({ success: false, error: 'upload_failed' })
+  }
+})
+
+// Sürücü belge onaylama/reddetme (Admin)
+router.post('/docs/approve', async (req: Request, res: Response) => {
+  const { driverId, docName, approved, reason } = req.body || {}
+  
+  if (!driverId || !docName) {
+    res.status(400).json({ success: false, error: 'invalid_payload' })
+    return
+  }
+
+  try {
+    let d = drivers.get(driverId)
+    if (!d) {
+      d = await getDriver(driverId) as DriverSession | undefined
+      if (d) drivers.set(driverId, d)
+    }
+
+    if (!d || !Array.isArray(d.docs)) {
+      res.status(404).json({ success: false, error: 'driver_or_docs_not_found' })
+      return
+    }
+
+    const docIdx = d.docs.findIndex(doc => doc.name === docName)
+    if (docIdx < 0) {
+      res.status(404).json({ success: false, error: 'doc_not_found' })
+      return
+    }
+
+    d.docs[docIdx].status = approved ? 'approved' : 'rejected'
+    if (!approved && reason) {
+      (d.docs[docIdx] as any).rejectReason = reason
+    }
+
+    drivers.set(driverId, d)
+    await saveDriver(d)
+
+    // Tüm belgeler onaylı mı kontrol et
+    const allApproved = d.docs.every(doc => doc.status === 'approved')
+    const requiredDocs = ['license', 'vehicle_registration', 'insurance', 'profile_photo']
+    const hasAllRequired = requiredDocs.every(req => d!.docs?.some(doc => doc.name === req && doc.status === 'approved'))
+
+    res.json({ 
+      success: true, 
+      data: { 
+        docs: d.docs, 
+        allApproved,
+        hasAllRequired
+      } 
+    })
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'update_failed' })
+  }
+})
+
 // Admin: Sürücü available durumunu doğrudan veritabanında güncelle
 router.post('/admin/set-available', async (req: Request, res: Response) => {
   const { id, available } = req.body || {}

@@ -10,6 +10,14 @@ const getEnv = (k: string) => {
 const SUPABASE_URL = getEnv('SUPABASE_URL')
 const SUPABASE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('SUPABASE_ANON_KEY')
 
+type DriverDoc = {
+  name: string
+  url?: string
+  uploadedAt?: string
+  status?: 'pending' | 'approved' | 'rejected'
+  rejectReason?: string
+}
+
 type DriverSession = {
   id: string
   name: string
@@ -22,7 +30,7 @@ type DriverSession = {
   vehicleType: 'sedan' | 'suv' | 'van' | 'luxury'
   vehicleModel?: string
   licensePlate?: string
-  docs?: Array<{ name: string, url?: string }>
+  docs?: DriverDoc[]
   location: { lat: number, lng: number }
   available: boolean
   approved: boolean

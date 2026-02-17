@@ -6,7 +6,8 @@ import { AdminLayout } from '@/components/AdminLayout'
 import { 
   Users, UserCheck, UserX, MapPin, Car, Phone, Mail, 
   FileText, Clock, DollarSign, CheckCircle, XCircle, 
-  Eye, RefreshCw, Trash2, ChevronRight, Loader2
+  Eye, RefreshCw, Trash2, ChevronRight, Loader2, Wifi,
+  WifiOff, Navigation, Calendar, AlertTriangle
 } from 'lucide-react'
 
 const extFromDataUrl = (u: string) => (u || '').startsWith('data:image/png') ? 'png' : 'jpg'
@@ -14,6 +15,14 @@ const extFromDataUrl = (u: string) => (u || '').startsWith('data:image/png') ? '
 const currencySymbol = (c: string) => (String(c).toUpperCase() === 'TRY' ? '₺' : '€')
 
 type DriverStatus = 'approved' | 'pending' | 'rejected'
+
+interface DriverDoc {
+  name: string
+  url?: string
+  uploadedAt?: string
+  status?: 'pending' | 'approved' | 'rejected'
+  rejectReason?: string
+}
 
 interface Driver {
   id: string
@@ -26,9 +35,10 @@ interface Driver {
   location?: { lat: number; lng: number }
   available?: boolean
   rating?: number
-  docs?: Array<{ name: string; url?: string }>
+  docs?: DriverDoc[]
   rejectReason?: string
   createdAt?: string
+  approved?: boolean
 }
 
 interface Booking {
@@ -40,6 +50,7 @@ interface Booking {
   basePrice?: number
   reservationCode?: string
   pickupTime?: string
+  customerName?: string
   extras?: { pricing?: { currency?: string } }
 }
 
@@ -57,6 +68,7 @@ export const AdminDrivers: React.FC = () => {
 
   const [bookings, setBookings] = useState<Booking[]>([])
   const [preview, setPreview] = useState<{ url: string; name: string } | null>(null)
+  const [onlineCount, setOnlineCount] = useState(0)
 
   const list = view === 'approved' ? approved : (view === 'pending' ? pending : rejected)
 
@@ -69,7 +81,9 @@ export const AdminDrivers: React.FC = () => {
         fetch('/api/drivers/list?status=rejected').then(r => r.json()).catch(() => ({}))
       ])
       setPending(p?.data || [])
-      setApproved(a?.data || [])
+      const approvedList = a?.data || []
+      setApproved(approvedList)
+      setOnlineCount(approvedList.filter((d: Driver) => d.available).length)
       setRejected(r?.data || [])
     } finally {
       setIsLoading(false)
@@ -106,12 +120,21 @@ export const AdminDrivers: React.FC = () => {
     const origin = (import.meta.env.VITE_API_ORIGIN as string) || `http://${window.location.hostname}:3005`
     const s = ioClient(origin, { transports: ['websocket'], reconnection: true })
     socketRef.current = s
+    
     s.on('driver:update', (d: never) => {
       if (!d || typeof d !== 'object' || !('id' in d)) return
       const driverData = d as { id: string; location?: { lat: number; lng: number }; available?: boolean }
       setApproved(prev => prev.map(x => x.id === driverData.id ? { ...x, location: driverData.location, available: driverData.available } : x))
       if (selectedDriver?.id === driverData.id) setSelectedDriver((cur: Driver | null) => cur ? { ...cur, location: driverData.location, available: driverData.available } : cur)
+      
+      // Online sayısını güncelle
+      setApproved(prev => {
+        const count = prev.filter(d => d.available).length
+        setOnlineCount(count)
+        return prev
+      })
     })
+    
     s.on('booking:update', (b: never) => {
       if (!b || typeof b !== 'object' || !('id' in b)) return
       const bookingData = b as Booking & { driverId?: string }
@@ -122,6 +145,22 @@ export const AdminDrivers: React.FC = () => {
         })
       }
     })
+
+    s.on('driver:applied', (d: Driver) => {
+      if (d) {
+        setPending(prev => [d, ...prev])
+        toast.info(`Yeni sürücü başvurusu: ${d.name}`)
+      }
+    })
+
+    s.on('driver:docs-updated', (data: { driverId: string; docs: DriverDoc[] }) => {
+      if (data?.driverId) {
+        setPending(prev => prev.map(d => d.id === data.driverId ? { ...d, docs: data.docs } : d))
+        setApproved(prev => prev.map(d => d.id === data.driverId ? { ...d, docs: data.docs } : d))
+        toast.info(`Sürücü belgeleri güncellendi`)
+      }
+    })
+    
     return () => {
       s.disconnect()
       socketRef.current = null
@@ -182,6 +221,56 @@ export const AdminDrivers: React.FC = () => {
     }
   }
 
+  // Belge onaylama
+  const handleDocApprove = async (docName: string) => {
+    if (!selectedDriver) return
+    try {
+      const res = await fetch('/api/drivers/docs/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ driverId: selectedDriver.id, docName, approved: true })
+      })
+      const j = await res.json()
+      if (!res.ok || !j?.success) throw new Error(j?.error)
+      
+      setSelectedDriver((prev: Driver | null) => {
+        if (!prev || !Array.isArray(prev.docs)) return prev
+        return {
+          ...prev,
+          docs: prev.docs.map(d => d.name === docName ? { ...d, status: 'approved' as const } : d)
+        }
+      })
+      toast.success('Belge onaylandı')
+    } catch {
+      toast.error('Belge onaylama başarısız')
+    }
+  }
+
+  // Belge reddetme
+  const handleDocReject = async (docName: string, reason: string) => {
+    if (!selectedDriver) return
+    try {
+      const res = await fetch('/api/drivers/docs/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ driverId: selectedDriver.id, docName, approved: false, reason })
+      })
+      const j = await res.json()
+      if (!res.ok || !j?.success) throw new Error(j?.error)
+      
+      setSelectedDriver((prev: Driver | null) => {
+        if (!prev || !Array.isArray(prev.docs)) return prev
+        return {
+          ...prev,
+          docs: prev.docs.map(d => d.name === docName ? { ...d, status: 'rejected' as const, rejectReason: reason } : d)
+        }
+      })
+      toast.error('Belge reddedildi')
+    } catch {
+      toast.error('Belge reddetme başarısız')
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'approved':
@@ -195,6 +284,16 @@ export const AdminDrivers: React.FC = () => {
     }
   }
 
+  const getDocLabel = (name: string) => {
+    const labels: Record<string, string> = {
+      'license': 'Sürücü Belgesi',
+      'vehicle_registration': 'Araç Ruhsatı',
+      'insurance': 'Sigorta Belgesi',
+      'profile_photo': 'Profil Fotoğrafı'
+    }
+    return labels[name] || name
+  }
+
   return (
     <AdminLayout>
       <div className="p-4 lg:p-6">
@@ -205,7 +304,7 @@ export const AdminDrivers: React.FC = () => {
         </div>
 
         {/* İstatistikler */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-green-500/20 rounded-lg flex items-center justify-center">
@@ -217,6 +316,19 @@ export const AdminDrivers: React.FC = () => {
               </div>
             </div>
           </div>
+          
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center">
+                <Wifi className="h-6 w-6 text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-emerald-400">{onlineCount}</p>
+                <p className="text-sm text-gray-400">Şu An Online</p>
+              </div>
+            </div>
+          </div>
+          
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-yellow-500/20 rounded-lg flex items-center justify-center">
@@ -228,6 +340,7 @@ export const AdminDrivers: React.FC = () => {
               </div>
             </div>
           </div>
+          
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-red-500/20 rounded-lg flex items-center justify-center">
@@ -253,6 +366,9 @@ export const AdminDrivers: React.FC = () => {
           >
             <UserCheck className="h-4 w-4" />
             Sürücüler ({approved.length})
+            {onlineCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 bg-emerald-500 text-white text-xs rounded-full">{onlineCount} online</span>
+            )}
           </button>
           <button
             onClick={() => { setView('pending'); setSelectedId(null); setDetailTab('docs') }}
@@ -325,8 +441,18 @@ export const AdminDrivers: React.FC = () => {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <p className="font-medium text-white truncate">{d.name}</p>
-                          {view === 'approved' && d.available && (
-                            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                          {view === 'approved' && (
+                            d.available ? (
+                              <span className="flex items-center gap-1 text-xs text-emerald-400">
+                                <Wifi className="h-3 w-3" />
+                                ONLINE
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-xs text-gray-500">
+                                <WifiOff className="h-3 w-3" />
+                                offline
+                              </span>
+                            )
                           )}
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-400">
@@ -339,10 +465,19 @@ export const AdminDrivers: React.FC = () => {
                             </>
                           )}
                         </div>
-                        {d.location && (
+                        {d.location && d.location.lat !== 0 && (
                           <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
                             <MapPin className="h-3 w-3" />
                             <span>{d.location.lat.toFixed(4)}, {d.location.lng.toFixed(4)}</span>
+                          </div>
+                        )}
+                        {/* Belgeler özeti */}
+                        {Array.isArray(d.docs) && d.docs.length > 0 && (
+                          <div className="flex items-center gap-1 mt-2">
+                            <FileText className="h-3 w-3 text-gray-500" />
+                            <span className="text-xs text-gray-500">
+                              {d.docs.filter(doc => doc.status === 'approved').length}/{d.docs.length} belge onaylı
+                            </span>
                           </div>
                         )}
                       </div>
@@ -403,8 +538,16 @@ export const AdminDrivers: React.FC = () => {
                       <h3 className="font-semibold text-white">{selectedDriver.name}</h3>
                       <div className="flex items-center gap-2">
                         {getStatusBadge(view)}
-                        {view === 'approved' && selectedDriver.available && (
-                          <span className="text-xs text-green-400">• Online</span>
+                        {view === 'approved' && (
+                          selectedDriver.available ? (
+                            <span className="flex items-center gap-1 text-xs text-emerald-400">
+                              <Wifi className="h-3 w-3" /> Online
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-xs text-gray-500">
+                              <WifiOff className="h-3 w-3" /> Offline
+                            </span>
+                          )
                         )}
                       </div>
                     </div>
@@ -470,13 +613,17 @@ export const AdminDrivers: React.FC = () => {
                 <div className="p-4 max-h-[400px] overflow-y-auto">
                   {detailTab === 'live' && view === 'approved' && (
                     <div className="space-y-4">
+                      {/* Aktif Yolculuk */}
                       {!activeBooking ? (
                         <div className="text-center py-6">
                           <Car className="h-8 w-8 text-gray-600 mx-auto mb-2" />
                           <p className="text-gray-400 text-sm">Aktif yolculuk yok</p>
+                          {selectedDriver.available && (
+                            <p className="text-emerald-400 text-xs mt-1">Sürücü yeni yolculuk bekliyor</p>
+                          )}
                         </div>
                       ) : (
-                        <div className="bg-gray-700/50 rounded-lg p-4">
+                        <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-4">
                           <div className="flex items-center justify-between mb-3">
                             <span className="text-sm font-medium text-white">Aktif Yolculuk</span>
                             <span className={`px-2 py-1 rounded text-xs ${
@@ -484,50 +631,68 @@ export const AdminDrivers: React.FC = () => {
                               activeBooking.status === 'driver_en_route' ? 'bg-blue-500/20 text-blue-400' :
                               'bg-yellow-500/20 text-yellow-400'
                             }`}>
-                              {activeBooking.status}
+                              {activeBooking.status === 'in_progress' ? 'Yolda' :
+                               activeBooking.status === 'driver_en_route' ? 'Yola Çıktı' :
+                               activeBooking.status === 'driver_arrived' ? 'Geldi' :
+                               activeBooking.status}
                             </span>
                           </div>
                           
                           <div className="space-y-2 text-sm">
                             <div className="flex items-start gap-2">
-                              <div className="w-2 h-2 bg-green-500 rounded-full mt-1.5"></div>
-                              <p className="text-gray-300 line-clamp-2">{activeBooking.pickupLocation?.address}</p>
+                              <div className="w-2 h-2 bg-green-500 rounded-full mt-1.5 flex-shrink-0"></div>
+                              <p className="text-gray-300">{activeBooking.pickupLocation?.address || 'Alış Noktası'}</p>
                             </div>
                             <div className="flex items-start gap-2">
-                              <div className="w-2 h-2 bg-red-500 rounded-full mt-1.5"></div>
-                              <p className="text-gray-300 line-clamp-2">{activeBooking.dropoffLocation?.address}</p>
+                              <div className="w-2 h-2 bg-red-500 rounded-full mt-1.5 flex-shrink-0"></div>
+                              <p className="text-gray-300">{activeBooking.dropoffLocation?.address || 'Varış Noktası'}</p>
                             </div>
                           </div>
 
                           {activeBooking.finalPrice && (
                             <div className="mt-3 pt-3 border-t border-gray-600">
-                              <div className="flex items-center gap-2 text-white">
-                                <DollarSign className="h-4 w-4 text-green-400" />
-                                <span className="font-bold">
-                                  {currencySymbol(activeBooking.extras?.pricing?.currency || 'TRY')}
-                                  {activeBooking.finalPrice.toFixed(0)}
-                                </span>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-white">
+                                  <DollarSign className="h-4 w-4 text-green-400" />
+                                  <span className="font-bold">
+                                    {currencySymbol(activeBooking.extras?.pricing?.currency || 'TRY')}
+                                    {activeBooking.finalPrice.toFixed(0)}
+                                  </span>
+                                </div>
+                                {activeBooking.reservationCode && (
+                                  <span className="text-xs text-gray-500">#{activeBooking.reservationCode}</span>
+                                )}
                               </div>
                             </div>
                           )}
                         </div>
                       )}
 
-                      {selectedDriver.location && (
-                        <div className="h-48 rounded-lg overflow-hidden border border-gray-700">
-                          <OpenStreetMap
-                            center={selectedDriver.location}
-                            customerLocation={activeBooking?.pickupLocation || selectedDriver.location}
-                            destination={activeBooking?.dropoffLocation || selectedDriver.location}
-                            drivers={[{ 
-                              id: selectedDriver.id, 
-                              name: selectedDriver.name, 
-                              location: selectedDriver.location, 
-                              rating: selectedDriver.rating || 0, 
-                              available: !!selectedDriver.available 
-                            }]}
-                            highlightDriverId={selectedDriver.id}
-                          />
+                      {/* Konum Haritası */}
+                      {selectedDriver.location && selectedDriver.location.lat !== 0 && (
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-400 mb-2 flex items-center gap-2">
+                            <Navigation className="h-4 w-4" />
+                            Anlık Konum
+                          </h4>
+                          <div className="h-48 rounded-lg overflow-hidden border border-gray-700">
+                            <OpenStreetMap
+                              center={selectedDriver.location}
+                              customerLocation={activeBooking?.pickupLocation || selectedDriver.location}
+                              destination={activeBooking?.dropoffLocation || selectedDriver.location}
+                              drivers={[{ 
+                                id: selectedDriver.id, 
+                                name: selectedDriver.name, 
+                                location: selectedDriver.location, 
+                                rating: selectedDriver.rating || 0, 
+                                available: !!selectedDriver.available 
+                              }]}
+                              highlightDriverId={selectedDriver.id}
+                            />
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1 text-center">
+                            {selectedDriver.location.lat.toFixed(6)}, {selectedDriver.location.lng.toFixed(6)}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -541,10 +706,10 @@ export const AdminDrivers: React.FC = () => {
                           <p className="text-gray-400 text-sm">Geçmiş yolculuk yok</p>
                         </div>
                       ) : (
-                        completedBookings.map((b) => (
+                        completedBookings.slice(0, 10).map((b) => (
                           <div key={b.id} className="bg-gray-700/50 rounded-lg p-3">
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs text-gray-500">{b.reservationCode || '-'}</span>
+                              <span className="text-xs text-gray-500">#{b.reservationCode || b.id.slice(-6)}</span>
                               <span className="text-xs text-green-400">
                                 {currencySymbol(b.extras?.pricing?.currency || 'TRY')}
                                 {(b.finalPrice || b.basePrice || 0).toFixed(0)}
@@ -552,6 +717,12 @@ export const AdminDrivers: React.FC = () => {
                             </div>
                             <p className="text-sm text-gray-300 line-clamp-1">{b.pickupLocation?.address}</p>
                             <p className="text-xs text-gray-500 line-clamp-1">→ {b.dropoffLocation?.address}</p>
+                            {b.pickupTime && (
+                              <p className="text-xs text-gray-600 mt-1">
+                                <Calendar className="h-3 w-3 inline mr-1" />
+                                {new Date(b.pickupTime).toLocaleString('tr-TR')}
+                              </p>
+                            )}
                           </div>
                         ))
                       )}
@@ -561,31 +732,78 @@ export const AdminDrivers: React.FC = () => {
                   {detailTab === 'docs' && (
                     <div className="space-y-3">
                       {Array.isArray(selectedDriver.docs) && selectedDriver.docs.length > 0 ? (
-                        selectedDriver.docs.map((x, i) => (
+                        selectedDriver.docs.map((doc, i) => (
                           <div key={i} className="bg-gray-700/50 rounded-lg p-3">
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm text-gray-300">{x.name}</span>
-                              {x.url && (
-                                <a 
-                                  href={x.url} 
-                                  download 
-                                  className="text-xs text-blue-400 hover:text-blue-300"
-                                >
-                                  İndir
-                                </a>
-                              )}
+                              <span className="text-sm text-white font-medium">{getDocLabel(doc.name)}</span>
+                              <div className="flex items-center gap-2">
+                                {doc.status === 'approved' && (
+                                  <span className="text-xs text-green-400 flex items-center gap-1">
+                                    <CheckCircle className="h-3 w-3" /> Onaylı
+                                  </span>
+                                )}
+                                {doc.status === 'rejected' && (
+                                  <span className="text-xs text-red-400 flex items-center gap-1">
+                                    <XCircle className="h-3 w-3" /> Reddedildi
+                                  </span>
+                                )}
+                                {doc.status === 'pending' && (
+                                  <span className="text-xs text-yellow-400 flex items-center gap-1">
+                                    <Clock className="h-3 w-3" /> Onay Bekliyor
+                                  </span>
+                                )}
+                                {!doc.status && doc.url && (
+                                  <span className="text-xs text-gray-400">Yüklendi</span>
+                                )}
+                              </div>
                             </div>
-                            {x.url ? (
-                              <img 
-                                src={x.url} 
-                                alt={x.name} 
-                                className="h-24 rounded border border-gray-600 cursor-zoom-in"
-                                onClick={() => setPreview({ url: x.url, name: x.name })}
-                              />
+                            
+                            {doc.url ? (
+                              <div className="relative group">
+                                {doc.url.startsWith('data:image') ? (
+                                  <img 
+                                    src={doc.url} 
+                                    alt={doc.name} 
+                                    className="h-24 rounded border border-gray-600 cursor-zoom-in w-full object-cover"
+                                    onClick={() => setPreview({ url: doc.url!, name: getDocLabel(doc.name) })}
+                                  />
+                                ) : (
+                                  <div className="h-16 bg-gray-600/50 rounded flex items-center justify-center text-gray-500 text-xs">
+                                    PDF Belgesi
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <div className="h-16 bg-gray-600/50 rounded flex items-center justify-center text-gray-500 text-xs">
-                                Belge yok
+                                <AlertTriangle className="h-4 w-4 mr-1" />
+                                Belge yüklenmemiş
                               </div>
+                            )}
+
+                            {/* Onay/Red Butonları (Admin için) */}
+                            {doc.url && doc.status !== 'approved' && (
+                              <div className="flex gap-2 mt-2">
+                                <button
+                                  onClick={() => handleDocApprove(doc.name)}
+                                  className="flex-1 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs"
+                                >
+                                  <CheckCircle className="h-3 w-3 inline mr-1" />
+                                  Onayla
+                                </button>
+                                <button
+                                  onClick={() => handleDocReject(doc.name, 'Belge geçersiz')}
+                                  className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs"
+                                >
+                                  <XCircle className="h-3 w-3 inline mr-1" />
+                                  Reddet
+                                </button>
+                              </div>
+                            )}
+
+                            {doc.uploadedAt && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                Yüklenme: {new Date(doc.uploadedAt).toLocaleString('tr-TR')}
+                              </p>
                             )}
                           </div>
                         ))
@@ -593,9 +811,11 @@ export const AdminDrivers: React.FC = () => {
                         <div className="text-center py-6">
                           <FileText className="h-8 w-8 text-gray-600 mx-auto mb-2" />
                           <p className="text-gray-400 text-sm">Belge yok</p>
+                          <p className="text-gray-500 text-xs mt-1">Sürücü henüz belge yüklememiş</p>
                         </div>
                       )}
 
+                      {/* Başvuru İşlemleri */}
                       {(view === 'pending' || view === 'rejected') && (
                         <div className="pt-4 border-t border-gray-700 space-y-3">
                           <div>
@@ -647,6 +867,7 @@ export const AdminDrivers: React.FC = () => {
         </div>
       </div>
 
+      {/* Önizleme Modal */}
       {preview && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setPreview(null)}>
           <div className="bg-gray-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
