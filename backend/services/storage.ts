@@ -211,6 +211,9 @@ export async function saveDriver(d: DriverSession) {
 export async function getDriver(id: string): Promise<DriverSession | null> {
   if (memory.has(id)) return memory.get(id) || null
   
+  // Test sürücüleri için demo veriyi kontrol et
+  const demoDriver = DEMO_DRIVERS.find(d => d.id === id)
+  
   // Supabase'den çek
   const rows = await supabaseRequest('drivers', 'GET', null, `id=eq.${id}&limit=1`)
   const row = Array.isArray(rows) ? rows[0] : null
@@ -237,6 +240,14 @@ export async function getDriver(id: string): Promise<DriverSession | null> {
     const enriched = enrichTestDriver(d)
     memory.set(id, enriched)
     return enriched
+  }
+  
+  // Veritabanında yoksa ama test sürücüsü ise, demo veriyi döndür ve kaydet
+  if (demoDriver) {
+    console.log('Test driver not in DB, inserting:', id)
+    await sbUpsertDriver(demoDriver)
+    memory.set(id, demoDriver)
+    return demoDriver
   }
   
   return null
@@ -291,12 +302,45 @@ export async function listDriversByStatus(status: 'approved' | 'pending' | 'reje
   
   const rows = await supabaseRequest('drivers', 'GET', null, query)
   
+  // Supabase çalışmıyorsa veya boşsa demo veri döndür
   if (!Array.isArray(rows)) {
-    // Supabase çalışmıyorsa demo veri döndür
-    if (status === 'approved') {
+    console.log('Supabase not available, returning demo drivers for', status)
+    if (status === 'approved' || status === 'all') {
       return DEMO_DRIVERS
     }
     return []
+  }
+  
+  // Eğer onaylı sürücü listesi boşsa ve test sürücüleri yoksa, demo veri döndür
+  if (status === 'approved' && rows.length === 0) {
+    console.log('No approved drivers in database, initializing test drivers...')
+    // Test sürücülerini veritabanına ekle
+    for (const d of DEMO_DRIVERS) {
+      await sbUpsertDriver(d)
+    }
+    return DEMO_DRIVERS
+  }
+  
+  // Test sürücülerinin listede olup olmadığını kontrol et
+  if (status === 'approved' || status === 'all') {
+    const hasFatih = rows.some((r: any) => r.id === 'drv_fatih')
+    const hasVedat = rows.some((r: any) => r.id === 'drv_vedat')
+    
+    // Test sürücüleri eksikse ekle
+    if (!hasFatih) {
+      const fatih = DEMO_DRIVERS.find(d => d.id === 'drv_fatih')
+      if (fatih) {
+        await sbUpsertDriver(fatih)
+        rows.push(fatih as any)
+      }
+    }
+    if (!hasVedat) {
+      const vedat = DEMO_DRIVERS.find(d => d.id === 'drv_vedat')
+      if (vedat) {
+        await sbUpsertDriver(vedat)
+        rows.push(vedat as any)
+      }
+    }
   }
   
   return rows.map((row: any) => {

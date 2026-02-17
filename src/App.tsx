@@ -162,21 +162,20 @@ export default function App() {
         </ErrorBoundary>
         <Toaster 
           position="bottom-right"
+          theme="dark"
+          duration={3000}
           toastOptions={{
-            duration: 3000,
             style: {
               background: '#1f2937',
               color: '#fff',
               border: '1px solid #374151',
               borderRadius: '8px',
+              fontSize: '14px',
             },
-            success: {
-              iconTheme: { primary: '#22c55e', secondary: '#fff' }
-            },
-            error: {
-              iconTheme: { primary: '#ef4444', secondary: '#fff' }
-            }
+            className: 'bg-gray-800 border-gray-700',
           }}
+          richColors
+          closeButton
         />
       </I18nProvider>
     </Router>
