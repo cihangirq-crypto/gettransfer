@@ -19,6 +19,8 @@ type DriverSession = {
   id: string
   name: string
   email?: string
+  phone?: string
+  address?: string
   password?: string
   passwordHash?: string
   passwordSalt?: string
@@ -118,9 +120,9 @@ router.post('/clean-stale-requests', (_req: Request, res: Response) => {
 })
 
 router.post('/apply', (req: Request, res: Response) => {
-  const { name, email, password, vehicleType, vehicleModel, licensePlate, docs, location } = req.body || {}
+  const { name, email, password, phone, address, vehicleType, vehicleModel, licensePlate, docs, location } = req.body || {}
   // Konum ZORUNLU - gerçek konum olmadan kayıt yapılamaz
-  if (!name || !email || typeof password !== 'string' || password.length < 6 || !vehicleType || !location || !isValidLatLng(location)) {
+  if (!name || !email || typeof password !== 'string' || password.length < 6 || !phone || !address || !vehicleType || !location || !isValidLatLng(location)) {
     res.status(400).json({ success: false, error: 'invalid_payload_location_required' })
     return
   }
@@ -136,6 +138,8 @@ router.post('/apply', (req: Request, res: Response) => {
     id,
     name,
     email: emailNorm,
+    phone: String(phone).trim(),
+    address: String(address).trim(),
     passwordHash: hash,
     passwordSalt: salt,
     tcid: 'NA',

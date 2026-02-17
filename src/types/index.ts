@@ -3,6 +3,7 @@ export interface User {
   email: string;
   name: string;
   phone: string;
+  address?: string;  // Adres bilgisi
   role: 'customer' | 'driver' | 'admin';
   isVerified: boolean;
   createdAt: string;

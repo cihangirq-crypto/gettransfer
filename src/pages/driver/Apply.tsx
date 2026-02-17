@@ -6,10 +6,10 @@ import { useAuthStore } from '@/stores/authStore'
 import { useNavigate } from 'react-router-dom'
 import { DEFAULT_CENTER } from '@/config/env'
 import type { User as UserType } from '@/types'
-import { Car, User, ArrowLeft, FileText, Upload, MapPin } from 'lucide-react'
+import { Car, User, ArrowLeft, FileText, Upload, MapPin, Phone, Home } from 'lucide-react'
 
 export const DriverApply: React.FC = () => {
-  const [form, setForm] = useState({ name: '', email: '', password: '', vehicleType: 'sedan', vehicleModel: '', licensePlate: '', lat: 0, lng: 0 })
+  const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', address: '', vehicleType: 'sedan', vehicleModel: '', licensePlate: '', lat: 0, lng: 0 })
   const [docs, setDocs] = useState<Record<string, string>>({})
   const [locating, setLocating] = useState(true)
   const requiredDocs = [
@@ -57,6 +57,8 @@ export const DriverApply: React.FC = () => {
 
   const submit = async () => {
     if (!form.name) { toast.error('Ad Soyad gerekli'); return }
+    if (!form.phone) { toast.error('Telefon numarası gerekli'); return }
+    if (!form.address) { toast.error('Adres gerekli'); return }
     for (const n of requiredDocs) { if (!docs[n.key]) { toast.error(`Eksik belge: ${n.label}`); return } }
     try {
       if (!form.email) { toast.error('E-posta gerekli'); return }
@@ -65,6 +67,8 @@ export const DriverApply: React.FC = () => {
         name: form.name,
         email: form.email,
         password: form.password,
+        phone: form.phone,
+        address: form.address,
         vehicleType: form.vehicleType,
         vehicleModel: form.vehicleModel,
         licensePlate: form.licensePlate,
@@ -85,7 +89,8 @@ export const DriverApply: React.FC = () => {
           id: driverId,
           email: form.email,
           name: form.name || 'Sürücü',
-          phone: '',
+          phone: form.phone,
+          address: form.address,
           role: 'driver',
           isVerified: true,
           createdAt: new Date().toISOString(),
@@ -148,13 +153,35 @@ export const DriverApply: React.FC = () => {
                   onChange={e => setForm({ ...form, email: e.target.value })}
                 />
               </div>
-              <input
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
-                placeholder="Şifre (en az 6 karakter)"
-                type="password"
-                value={form.password}
-                onChange={e => setForm({ ...form, password: e.target.value })}
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    className="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="Telefon Numarası (örn: 0532 123 45 67)"
+                    type="tel"
+                    value={form.phone}
+                    onChange={e => setForm({ ...form, phone: e.target.value })}
+                  />
+                </div>
+                <input
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="Şifre (en az 6 karakter)"
+                  type="password"
+                  value={form.password}
+                  onChange={e => setForm({ ...form, password: e.target.value })}
+                />
+              </div>
+              <div className="relative">
+                <Home className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                <textarea
+                  className="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                  placeholder="Adres (Mahalle, Sokak, No, İlçe, İl)"
+                  rows={2}
+                  value={form.address}
+                  onChange={e => setForm({ ...form, address: e.target.value })}
+                />
+              </div>
             </div>
 
             {/* Vehicle Info */}

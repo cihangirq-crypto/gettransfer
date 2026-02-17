@@ -7,7 +7,7 @@ import {
   Users, UserCheck, UserX, MapPin, Car, Phone, Mail, 
   FileText, Clock, DollarSign, CheckCircle, XCircle, 
   Eye, RefreshCw, Trash2, ChevronRight, Loader2, Wifi,
-  WifiOff, Navigation, Calendar, AlertTriangle
+  WifiOff, Navigation, Calendar, AlertTriangle, Home
 } from 'lucide-react'
 
 const extFromDataUrl = (u: string) => (u || '').startsWith('data:image/png') ? 'png' : 'jpg'
@@ -29,6 +29,7 @@ interface Driver {
   name: string
   email?: string
   phone?: string
+  address?: string
   vehicleType: string
   vehicleModel?: string
   licensePlate?: string
@@ -465,6 +466,12 @@ export const AdminDrivers: React.FC = () => {
                             </>
                           )}
                         </div>
+                        {d.phone && (
+                          <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
+                            <Phone className="h-3 w-3" />
+                            <span>{d.phone}</span>
+                          </div>
+                        )}
                         {d.location && d.location.lat !== 0 && (
                           <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
                             <MapPin className="h-3 w-3" />
@@ -564,6 +571,12 @@ export const AdminDrivers: React.FC = () => {
                       <div className="flex items-center gap-2 text-gray-400">
                         <Phone className="h-4 w-4" />
                         <span>{selectedDriver.phone}</span>
+                      </div>
+                    )}
+                    {selectedDriver.address && (
+                      <div className="flex items-start gap-2 text-gray-400">
+                        <Home className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                        <span className="line-clamp-2">{selectedDriver.address}</span>
                       </div>
                     )}
                     <div className="flex items-center gap-2 text-gray-400">
