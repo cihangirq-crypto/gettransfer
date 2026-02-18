@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express'
 import { createBooking, findBookingByPhoneAndCode, generateReservationCode, getBookingById, listBookingsByCustomer, listBookingsByDriver, storageMode, updateBooking } from '../services/bookingsStorage.js'
+import { getDriver } from '../services/storage.js'
 import { verifyGuestToken } from '../services/guestToken.js'
 import { getPricingConfig } from '../services/pricingStorage.js'
 
@@ -12,6 +13,8 @@ type Booking = {
   guestName?: string
   guestPhone?: string
   driverId?: string
+  driverName?: string
+  driverPhone?: string
   pickupLocation: { lat: number, lng: number, address: string }
   dropoffLocation: { lat: number, lng: number, address: string }
   pickupTime: string
@@ -52,6 +55,7 @@ const allowedNext: Record<Booking['status'], Array<Booking['status']>> = {
 const canTransition = (from: Booking['status'], to: Booking['status']) => from === to || allowedNext[from].includes(to)
 
 const liveCustomerLocation: Map<string, { location: { lat: number, lng: number }, ts: number }> = new Map()
+const liveDriverLocation: Map<string, { location: { lat: number, lng: number }, ts: number }> = new Map()
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 const haversineMeters = (a: { lat: number, lng: number }, b: { lat: number, lng: number }) => {
@@ -62,6 +66,23 @@ const haversineMeters = (a: { lat: number, lng: number }, b: { lat: number, lng:
   const la2 = b.lat * Math.PI / 180
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2
   return 2 * R * Math.asin(Math.sqrt(h))
+}
+
+// Helper: Booking'e driver bilgilerini ekle
+async function enrichBookingWithDriverInfo(booking: any): Promise<Booking> {
+  if (booking.driverId) {
+    try {
+      const driver = await getDriver(booking.driverId)
+      if (driver) {
+        return {
+          ...booking,
+          driverName: driver.name,
+          driverPhone: driver.phone || ''
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  return booking
 }
 
 router.post('/create', (req: Request, res: Response) => {
@@ -124,25 +145,30 @@ router.post('/create', (req: Request, res: Response) => {
       createdAt: now,
       updatedAt: now,
     } as any)
+
+    // Driver bilgilerini ekle
+    const enriched = await enrichBookingWithDriverInfo(created)
+
     try {
       const io = (req.app.get('io') as any)
-      io?.emit('booking:create', created)
-      io?.to?.(`booking:${created.id}`)?.emit?.('booking:create', created)
+      io?.emit('booking:create', enriched)
+      io?.to?.(`booking:${created.id}`)?.emit?.('booking:create', enriched)
     } catch {}
-    res.json({ success: true, data: { ...created, storage: storageMode() } })
+    res.json({ success: true, data: { ...enriched, storage: storageMode() } })
   })().catch(() => res.status(500).json({ success: false, error: 'create_failed' }))
 })
 
 router.post('/:id/cancel', (req: Request, res: Response) => {
   const { id } = req.params
-  updateBooking(id, { status: 'cancelled' } as any).then(b => {
+  updateBooking(id, { status: 'cancelled' } as any).then(async b => {
     if (!b) { res.status(404).json({ success: false, error: 'booking_not_found' }); return }
+    const enriched = await enrichBookingWithDriverInfo(b)
     try {
       const io = (req.app.get('io') as any)
-      io?.emit('booking:update', b)
-      io?.to?.(`booking:${b.id}`)?.emit?.('booking:update', b)
+      io?.emit('booking:update', enriched)
+      io?.to?.(`booking:${b.id}`)?.emit?.('booking:update', enriched)
     } catch {}
-    res.json({ success: true, data: b })
+    res.json({ success: true, data: enriched })
   }).catch(() => res.status(500).json({ success: false, error: 'cancel_failed' }))
 })
 
@@ -159,19 +185,23 @@ router.put('/:id/status', (req: Request, res: Response) => {
     if (status === 'completed' && !cur.completedAt) patch.completedAt = new Date().toISOString()
     const updated = await updateBooking(id, patch)
     if (!updated) { res.status(404).json({ success: false, error: 'booking_not_found' }); return }
+    
+    const enriched = await enrichBookingWithDriverInfo(updated)
+    
     try {
       const io = (req.app.get('io') as any)
-      io?.emit('booking:update', updated)
-      io?.to?.(`booking:${updated.id}`)?.emit?.('booking:update', updated)
+      io?.emit('booking:update', enriched)
+      io?.to?.(`booking:${updated.id}`)?.emit?.('booking:update', enriched)
     } catch {}
-    res.json({ success: true, data: updated })
+    res.json({ success: true, data: enriched })
   })().catch(() => res.status(500).json({ success: false, error: 'update_failed' }))
 })
 
 router.get('/:id', (req: Request, res: Response) => {
-  getBookingById(req.params.id).then(b => {
+  getBookingById(req.params.id).then(async b => {
     if (!b) { res.status(404).json({ success: false, error: 'booking_not_found' }); return }
-    res.json({ success: true, data: b })
+    const enriched = await enrichBookingWithDriverInfo(b)
+    res.json({ success: true, data: enriched })
   }).catch(() => res.status(500).json({ success: false, error: 'get_failed' }))
 })
 
@@ -179,15 +209,48 @@ router.put('/:id/route', (req: Request, res: Response) => {
   const { id } = req.params
   const { driverPath, customerPath } = req.body || {}
   if (!Array.isArray(driverPath) || driverPath.length === 0) { res.status(400).json({ success: false, error: 'invalid_route' }); return }
-  updateBooking(id, { route: { driverPath, customerPath: Array.isArray(customerPath) ? customerPath : undefined } } as any).then(b => {
+  updateBooking(id, { route: { driverPath, customerPath: Array.isArray(customerPath) ? customerPath : undefined } } as any).then(async b => {
     if (!b) { res.status(404).json({ success: false, error: 'booking_not_found' }); return }
+    const enriched = await enrichBookingWithDriverInfo(b)
     try {
       const io = (req.app.get('io') as any)
       io?.emit('booking:route', { id: b.id, driverPath: driverPath })
       io?.to?.(`booking:${b.id}`)?.emit?.('booking:route', { id: b.id, driverPath: driverPath })
     } catch {}
-    res.json({ success: true, data: b })
+    res.json({ success: true, data: enriched })
   }).catch(() => res.status(500).json({ success: false, error: 'route_failed' }))
+})
+
+// Şoför konumu güncelleme endpoint'i
+router.post('/:id/driver-location', (req: Request, res: Response) => {
+  const { id } = req.params
+  const { location } = req.body || {}
+  if (!isValidLatLng(location)) { res.status(400).json({ success: false, error: 'invalid_location' }); return }
+  
+  liveDriverLocation.set(id, { location, ts: Date.now() })
+  
+  try {
+    const io = (req.app.get('io') as any)
+    // Şoför konumunu müşteriye broadcast et
+    io?.emit('driver:location', { bookingId: id, location })
+    io?.to?.(`booking:${id}`)?.emit?.('driver:location', { bookingId: id, location })
+  } catch {}
+  
+  res.json({ success: true })
+})
+
+// Şoför konumu getirme endpoint'i
+router.get('/:id/driver-location', (req: Request, res: Response) => {
+  const { id } = req.params
+  const got = liveDriverLocation.get(id)
+  if (!got) { res.json({ success: true, data: null }); return }
+  // 5 dakikadan eski konumları sil
+  if (Date.now() - got.ts > 5 * 60_000) { 
+    liveDriverLocation.delete(id)
+    res.json({ success: true, data: null }); 
+    return 
+  }
+  res.json({ success: true, data: got.location })
 })
 
 router.post('/:id/customer-location', (req: Request, res: Response) => {
@@ -211,9 +274,13 @@ router.get('/:id/customer-location', (req: Request, res: Response) => {
   res.json({ success: true, data: got.location })
 })
 
-router.get('/by-driver/:driverId', (_req: Request, res: Response) => {
-  const driverId = String(_req.params.driverId || '').trim()
-  listBookingsByDriver(driverId).then(list => res.json({ success: true, data: list })).catch(() => res.status(500).json({ success: false, error: 'list_failed' }))
+router.get('/by-driver/:driverId', (req: Request, res: Response) => {
+  const driverId = String(req.params.driverId || '').trim()
+  listBookingsByDriver(driverId).then(async list => {
+    // Her booking'e driver bilgilerini ekle
+    const enriched = await Promise.all(list.map(b => enrichBookingWithDriverInfo(b)))
+    res.json({ success: true, data: enriched })
+  }).catch(() => res.status(500).json({ success: false, error: 'list_failed' }))
 })
 
 router.post('/:id/pay', (req: Request, res: Response) => {
@@ -233,17 +300,22 @@ router.post('/:id/pay', (req: Request, res: Response) => {
     }
     const updated = await updateBooking(id, patch)
     if (!updated) { res.status(404).json({ success: false, error: 'booking_not_found' }); return }
+    const enriched = await enrichBookingWithDriverInfo(updated)
     try {
       const io = (req.app.get('io') as any)
       io?.emit('booking:paid', { id: updated.id, amount: updated.finalPrice, method: paymentMethod })
       io?.to?.(`booking:${updated.id}`)?.emit?.('booking:paid', { id: updated.id, amount: updated.finalPrice, method: paymentMethod })
     } catch {}
-    res.json({ success: true, data: updated })
+    res.json({ success: true, data: enriched })
   })().catch(() => res.status(500).json({ success: false, error: 'pay_failed' }))
 })
 
 router.get('/by-customer/:customerId', (req: Request, res: Response) => {
-  listBookingsByCustomer(req.params.customerId).then(list => res.json({ success: true, data: list })).catch(() => res.status(500).json({ success: false, error: 'list_failed' }))
+  listBookingsByCustomer(req.params.customerId).then(async list => {
+    // Her booking'e driver bilgilerini ekle
+    const enriched = await Promise.all(list.map(b => enrichBookingWithDriverInfo(b)))
+    res.json({ success: true, data: enriched })
+  }).catch(() => res.status(500).json({ success: false, error: 'list_failed' }))
 })
 
 router.post('/lookup', (req: Request, res: Response) => {
@@ -255,9 +327,10 @@ router.post('/lookup', (req: Request, res: Response) => {
   const codeNorm = typeof reservationCode === 'string' ? reservationCode.trim().toUpperCase() : ''
   if (!phoneNorm || !codeNorm) { res.status(400).json({ success: false, error: 'invalid_payload' }); return }
   if (tok.phone !== phoneNorm && tok.phone !== String(phoneNorm).replace(/\s+/g, '')) { res.status(403).json({ success: false, error: 'phone_mismatch' }); return }
-  findBookingByPhoneAndCode(phoneNorm, codeNorm).then(b => {
+  findBookingByPhoneAndCode(phoneNorm, codeNorm).then(async b => {
     if (!b) { res.status(404).json({ success: false, error: 'booking_not_found' }); return }
-    res.json({ success: true, data: b })
+    const enriched = await enrichBookingWithDriverInfo(b)
+    res.json({ success: true, data: enriched })
   }).catch(() => res.status(500).json({ success: false, error: 'lookup_failed' }))
 })
 

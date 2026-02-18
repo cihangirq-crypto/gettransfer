@@ -40,12 +40,13 @@ interface OpenStreetMapProps {
   onDriverClick?: (driver: MapDriver) => void;
   onMapClick?: (loc: Location) => void;
   className?: string;
-  showRoute?: boolean;
+  showRoute?: boolean | 'to_pickup' | 'to_dropoff';
   pickupLocation?: Location;
   dropoffLocation?: Location;
   driverLocation?: Location;
   onRouteCalculated?: (distance: number, duration: number) => void;
   highlightDriverId?: string;
+  path?: Array<{ lat: number; lng: number }>;
 }
 
 // OSRM Route Service - Multiple fallback servers
@@ -133,6 +134,22 @@ const createIcon = (color: string, size: number = 20, label?: string) => {
   });
 };
 
+// Car icon for driver
+const createCarIcon = (color: string = '#10b981') => {
+  return L.divIcon({
+    html: `<div style="display: flex; align-items: center; justify-content: center;">
+      <div style="background-color: ${color}; width: 36px; height: 36px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+          <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+        </svg>
+      </div>
+    </div>`,
+    className: 'car-marker',
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+  });
+};
+
 const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
   center,
   customerLocation,
@@ -147,51 +164,65 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
   driverLocation,
   onRouteCalculated,
   highlightDriverId,
+  path,
 }) => {
-  const [route, setRoute] = useState<RouteInfo | null>(null);
+  const [routeToPickup, setRouteToPickup] = useState<RouteInfo | null>(null);
+  const [routeToDropoff, setRouteToDropoff] = useState<RouteInfo | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const mapRef = useRef<L.Map | null>(null);
 
-  // Calculate route when locations change
+  // Calculate route based on showRoute mode
   useEffect(() => {
-    const calculateRoute = async () => {
-      const origin = driverLocation || pickupLocation || customerLocation;
-      const dest = dropoffLocation || destination;
-      
-      if (!origin || !dest || !showRoute) {
-        setRoute(null);
-        return;
-      }
-
+    const calculateRoutes = async () => {
       setRouteLoading(true);
       setRouteError(null);
+      setRouteToPickup(null);
+      setRouteToDropoff(null);
 
       try {
-        const routeData = await fetchOSRMRoute(origin, dest);
+        // Şoför müşteriye geliyor (to_pickup)
+        if ((showRoute === 'to_pickup' || showRoute === true) && driverLocation && pickupLocation) {
+          const routeData = await fetchOSRMRoute(driverLocation, pickupLocation);
+          if (routeData) {
+            setRouteToPickup(routeData);
+            onRouteCalculated?.(routeData.distance, routeData.duration);
+          }
+        }
         
-        if (routeData) {
-          setRoute(routeData);
-          onRouteCalculated?.(routeData.distance, routeData.duration);
-        } else {
-          setRouteError('Rota hesaplanamadı');
-          // Fallback: straight line
-          setRoute({
-            distance: calculateStraightDistance(origin, dest),
-            duration: calculateStraightDistance(origin, dest) * 2,
-            coordinates: [origin, dest]
-          });
+        // Şoför müşteriyi aldı, hedefe gidiyor (to_dropoff)
+        if (showRoute === 'to_dropoff' && pickupLocation && dropoffLocation) {
+          // Müşteriden hedefe rota
+          const routeData = await fetchOSRMRoute(pickupLocation, dropoffLocation);
+          if (routeData) {
+            setRouteToDropoff(routeData);
+            onRouteCalculated?.(routeData.distance, routeData.duration);
+          }
+        }
+        
+        // Basit mod - sadece pickup'tan dropoff'a
+        if (showRoute === true && !driverLocation && pickupLocation && dropoffLocation) {
+          const routeData = await fetchOSRMRoute(pickupLocation, dropoffLocation);
+          if (routeData) {
+            setRouteToDropoff(routeData);
+            onRouteCalculated?.(routeData.distance, routeData.duration);
+          }
         }
       } catch (error) {
         console.error('Route error:', error);
-        setRouteError('Rota hatası');
+        setRouteError('Rota hesaplanamadı');
       } finally {
         setRouteLoading(false);
       }
     };
 
-    calculateRoute();
-  }, [customerLocation, destination, pickupLocation, dropoffLocation, driverLocation, showRoute, onRouteCalculated]);
+    if (showRoute) {
+      calculateRoutes();
+    } else {
+      setRouteToPickup(null);
+      setRouteToDropoff(null);
+    }
+  }, [showRoute, pickupLocation, dropoffLocation, driverLocation, onRouteCalculated]);
 
   // Straight line distance calculation (Haversine)
   const calculateStraightDistance = (from: Location, to: Location): number => {
@@ -214,15 +245,24 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
     if (pickupLocation) points.push([pickupLocation.lat, pickupLocation.lng]);
     if (dropoffLocation) points.push([dropoffLocation.lat, dropoffLocation.lng]);
     if (driverLocation) points.push([driverLocation.lat, driverLocation.lng]);
-    if (route?.coordinates) {
-      route.coordinates.forEach(c => points.push([c.lat, c.lng]));
+    if (routeToPickup?.coordinates) {
+      routeToPickup.coordinates.forEach(c => points.push([c.lat, c.lng]));
+    }
+    if (routeToDropoff?.coordinates) {
+      routeToDropoff.coordinates.forEach(c => points.push([c.lat, c.lng]));
+    }
+    if (path && path.length > 0) {
+      path.forEach(c => points.push([c.lat, c.lng]));
     }
     
     if (points.length === 0) return undefined;
     if (points.length === 1) return undefined;
     
     return L.latLngBounds(points);
-  }, [customerLocation, destination, pickupLocation, dropoffLocation, driverLocation, route]);
+  }, [customerLocation, destination, pickupLocation, dropoffLocation, driverLocation, routeToPickup, routeToDropoff, path]);
+
+  // Current route info
+  const currentRoute = routeToPickup || routeToDropoff;
 
   return (
     <div className={className} style={{ width: '100%', height: '100%', minHeight: '400px' }}>
@@ -241,14 +281,51 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
         <MapController center={center} bounds={bounds()} />
         <MapClickHandler onMapClick={onMapClick} />
 
-        {/* Route Polyline */}
-        {route && route.coordinates.length > 1 && (
+        {/* Route to Pickup - Şoförün müşteriye geliş rotası (mavi) */}
+        {routeToPickup && routeToPickup.coordinates.length > 1 && (
           <Polyline
-            positions={route.coordinates.map(c => [c.lat, c.lng])}
-            color="#2563eb"
+            positions={routeToPickup.coordinates.map(c => [c.lat, c.lng])}
+            color="#3b82f6"
             weight={5}
             opacity={0.8}
           />
+        )}
+
+        {/* Route to Dropoff - Müşteriden hedefe rota (yeşil) */}
+        {routeToDropoff && routeToDropoff.coordinates.length > 1 && (
+          <Polyline
+            positions={routeToDropoff.coordinates.map(c => [c.lat, c.lng])}
+            color="#22c55e"
+            weight={5}
+            opacity={0.8}
+          />
+        )}
+
+        {/* Recorded path */}
+        {path && path.length > 1 && (
+          <Polyline
+            positions={path.map(c => [c.lat, c.lng])}
+            color="#8b5cf6"
+            weight={4}
+            opacity={0.7}
+            dashArray="10, 5"
+          />
+        )}
+
+        {/* Driver Location Marker - Şoför konumu (araba ikonu) */}
+        {driverLocation && (
+          <Marker 
+            position={[driverLocation.lat, driverLocation.lng]}
+            icon={createCarIcon('#10b981')}
+          >
+            <Popup>
+              <div className="text-sm">
+                <strong className="text-green-600">🚗 Şoför Konumu</strong>
+                <br />
+                <span className="text-xs text-gray-600">Size doğru geliyor</span>
+              </div>
+            </Popup>
+          </Marker>
         )}
 
         {/* Customer Marker */}
@@ -307,20 +384,6 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
           </Marker>
         )}
 
-        {/* Driver Location Marker */}
-        {driverLocation && (
-          <Marker 
-            position={[driverLocation.lat, driverLocation.lng]}
-            icon={createIcon('#10b981', 14)}
-          >
-            <Popup>
-              <div className="text-sm">
-                <strong className="text-green-600">🚗 Şoför Konumu</strong>
-              </div>
-            </Popup>
-          </Marker>
-        )}
-
         {/* Available Driver Markers */}
         {drivers.map(driver => (
           <Marker
@@ -360,18 +423,24 @@ const OpenStreetMap: React.FC<OpenStreetMapProps> = ({
       )}
 
       {/* Route Info */}
-      {route && !routeLoading && (
+      {currentRoute && !routeLoading && (
         <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg px-4 py-2 z-[1000]">
           <div className="flex items-center gap-4 text-sm">
             <div>
               <span className="text-gray-500">📍 Mesafe:</span>
-              <span className="font-semibold ml-1">{route.distance.toFixed(1)} km</span>
+              <span className="font-semibold ml-1">{currentRoute.distance.toFixed(1)} km</span>
             </div>
             <div>
               <span className="text-gray-500">⏱️ Süre:</span>
-              <span className="font-semibold ml-1">{Math.round(route.duration)} dk</span>
+              <span className="font-semibold ml-1">{Math.round(currentRoute.duration)} dk</span>
             </div>
           </div>
+          {routeToPickup && (
+            <div className="text-xs text-blue-600 mt-1">🚗 Şoför size geliyor</div>
+          )}
+          {routeToDropoff && !routeToPickup && (
+            <div className="text-xs text-green-600 mt-1">🎯 Hedefe rota</div>
+          )}
         </div>
       )}
 

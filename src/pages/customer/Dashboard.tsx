@@ -5,9 +5,10 @@ import OpenStreetMap from '@/components/OpenStreetMap'
 import { useBookingStore } from '@/stores/bookingStore'
 import { useAuthStore } from '@/stores/authStore'
 import { CustomerLayout } from '@/components/CustomerLayout'
-import { MapPin, Car, Clock, Navigation, Plus, X, Loader2, Phone, MessageCircle } from 'lucide-react'
+import { MapPin, Car, Clock, Navigation, Plus, X, Loader2, Phone, MessageCircle, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { API } from '@/utils/api'
+import { io as ioClient, type Socket } from 'socket.io-client'
 
 interface Booking {
   id: string
@@ -29,7 +30,7 @@ export const CustomerDashboard = () => {
     refreshApprovedDriversNear, 
     startRealTimeUpdates, 
     stopRealTimeUpdates,
-    currentBooking,  // Global booking state
+    currentBooking,
     setCurrentBooking 
   } = useBookingStore()
   const { user } = useAuthStore()
@@ -52,10 +53,54 @@ export const CustomerDashboard = () => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const dropoffRef = useRef<HTMLDivElement>(null)
 
+  // Şoför canlı konumu
+  const [driverLiveLocation, setDriverLiveLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const socketRef = useRef<Socket | null>(null)
+
   // Aktif booking - önce global state'ten, yoksa API'den
   const activeBooking = currentBooking && ['pending', 'accepted', 'driver_en_route', 'driver_arrived', 'in_progress'].includes(currentBooking.status) 
     ? currentBooking 
     : null
+
+  // Socket.io ile şoför konumunu dinle
+  useEffect(() => {
+    if (!activeBooking?.id) {
+      setDriverLiveLocation(null)
+      if (socketRef.current) {
+        try { socketRef.current.disconnect() } catch { /* ignore */ }
+        socketRef.current = null
+      }
+      return
+    }
+
+    const origin = (import.meta.env.VITE_API_ORIGIN as string) || `http://${window.location.hostname}:3005`
+    const s = ioClient(origin, { transports: ['websocket'], reconnection: true })
+    socketRef.current = s
+
+    s.on('connect', () => {
+      s.emit('booking:join', { bookingId: activeBooking.id })
+    })
+
+    // Şoför konum güncellemesi
+    s.on('driver:location', (data: { bookingId: string; location: { lat: number; lng: number } }) => {
+      if (data.bookingId === activeBooking.id && data.location) {
+        setDriverLiveLocation(data.location)
+      }
+    })
+
+    // Booking durumu güncellemesi
+    s.on('booking:update', (updatedBooking: any) => {
+      if (updatedBooking?.id === activeBooking.id) {
+        setCurrentBooking(updatedBooking)
+      }
+    })
+
+    return () => {
+      try { s.emit('booking:leave', { bookingId: activeBooking.id }) } catch { /* ignore */ }
+      s.disconnect()
+      socketRef.current = null
+    }
+  }, [activeBooking?.id, setCurrentBooking])
 
   // Otomatik konum al
   useEffect(() => {
@@ -223,7 +268,7 @@ export const CustomerDashboard = () => {
       const j = await res.json()
       if (j.success) {
         setCurrentBooking(j.data)
-        toast.success('Transfer talebiniz oluşturuldu! Sürücü bekleniyor...')
+        toast.success('Transfer talebiniz oluşturuldu! Şoför bekleniyor...')
         setShowNewTrip(false)
         setDropoff('')
         setDropoffLocation(null)
@@ -249,6 +294,7 @@ export const CustomerDashboard = () => {
       
       if (res.ok) {
         setCurrentBooking(null)
+        setDriverLiveLocation(null)
         toast.success('Talep iptal edildi')
       }
     } catch {
@@ -259,10 +305,10 @@ export const CustomerDashboard = () => {
   // Durum çevirisi
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'pending': return 'Sürücü aranıyor...'
-      case 'accepted': return 'Sürücü atandı'
-      case 'driver_en_route': return 'Sürücü yolda'
-      case 'driver_arrived': return 'Sürücü geldi!'
+      case 'pending': return 'Şoför aranıyor...'
+      case 'accepted': return 'Şoför atandı'
+      case 'driver_en_route': return 'Şoför yola çıktı!'
+      case 'driver_arrived': return 'Şoför geldi!'
       case 'in_progress': return 'Yolculuk devam ediyor'
       case 'completed': return 'Tamamlandı'
       case 'cancelled': return 'İptal'
@@ -286,6 +332,14 @@ export const CustomerDashboard = () => {
   // Yakın sürücüler sayısı
   const nearbyDriversCount = availableDrivers.filter(d => d.isAvailable && d.currentLocation).length
 
+  // Harita için rota modu belirleme
+  const getRouteMode = (): 'to_pickup' | 'to_dropoff' | undefined => {
+    if (!activeBooking) return undefined
+    if (['driver_en_route', 'accepted'].includes(activeBooking.status)) return 'to_pickup'
+    if (['in_progress'].includes(activeBooking.status)) return 'to_dropoff'
+    return undefined
+  }
+
   return (
     <CustomerLayout>
       <div className="h-[calc(100vh-56px)] flex flex-col lg:flex-row">
@@ -302,7 +356,7 @@ export const CustomerDashboard = () => {
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-white font-bold text-lg flex items-center gap-2">
                   <Car className="h-6 w-6" />
-                  {activeBooking.status === 'pending' ? 'Sürücü Bekleniyor' : 
+                  {activeBooking.status === 'pending' ? 'Şoför Bekleniyor' : 
                    activeBooking.status === 'in_progress' ? 'Yolculukta' : 'Aktif Yolculuk'}
                 </h3>
                 <span className={`px-3 py-1 rounded-full text-xs font-bold ${getStatusColor(activeBooking.status)}`}>
@@ -333,7 +387,7 @@ export const CustomerDashboard = () => {
               {activeBooking.status === 'pending' && (
                 <div className="mt-3 p-3 bg-yellow-500/20 rounded-lg">
                   <p className="text-yellow-300 text-xs mb-2">
-                    ⏳ Sürücü aranıyor... Bekleyin veya iptal edin.
+                    ⏳ Şoför aranıyor... Bekleyin veya iptal edin.
                   </p>
                   <Button
                     onClick={handleCancelBooking}
@@ -348,32 +402,47 @@ export const CustomerDashboard = () => {
               {/* Şoför bilgileri */}
               {activeBooking.driverName && activeBooking.status !== 'pending' && (
                 <div className="mt-3 p-3 bg-gray-700/50 rounded-lg">
-                  <p className="text-white font-medium">{activeBooking.driverName}</p>
-                  {activeBooking.driverPhone && (
-                    <a href={`tel:${activeBooking.driverPhone}`} className="text-blue-400 text-sm flex items-center gap-1 mt-1">
-                      <Phone className="h-3 w-3" />
-                      {activeBooking.driverPhone}
-                    </a>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                      <Users className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-white font-medium">{activeBooking.driverName}</p>
+                      {activeBooking.driverPhone && (
+                        <a href={`tel:${activeBooking.driverPhone}`} className="text-blue-400 text-sm flex items-center gap-1 mt-1">
+                          <Phone className="h-3 w-3" />
+                          {activeBooking.driverPhone}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Şoför yola çıktı */}
+              {activeBooking.status === 'driver_en_route' && (
+                <div className="mt-3 p-3 bg-blue-500/20 rounded-lg">
+                  <p className="text-blue-300 text-sm font-medium">
+                    🚗 Şoför size doğru geliyor!
+                  </p>
+                  {driverLiveLocation && (
+                    <p className="text-blue-200 text-xs mt-1">
+                      Konumu haritada görüyorsunuz
+                    </p>
                   )}
                 </div>
               )}
               
-              {activeBooking.status === 'driver_en_route' && (
-                <div className="mt-3 p-3 bg-blue-500/20 rounded-lg">
-                  <p className="text-blue-300 text-sm">
-                    🚗 Sürücünüz yola çıktı! Yakında ulaşacak.
-                  </p>
-                </div>
-              )}
-              
+              {/* Şoför geldi */}
               {activeBooking.status === 'driver_arrived' && (
                 <div className="mt-3 p-3 bg-green-500/30 rounded-lg">
                   <p className="text-green-300 text-sm font-bold">
-                    ✅ Sürücünüz sizi bekliyor! Araçta yeriniz hazır.
+                    ✅ Şoför sizi bekliyor! Araçta yeriniz hazır.
                   </p>
                 </div>
               )}
 
+              {/* Yolculuk devam ediyor */}
               {activeBooking.status === 'in_progress' && (
                 <div className="mt-3 p-3 bg-purple-500/20 rounded-lg">
                   <p className="text-purple-300 text-sm">
@@ -491,7 +560,7 @@ export const CustomerDashboard = () => {
                     {isSubmitting ? (
                       <><Loader2 className="h-4 w-4 animate-spin mr-2" />Oluşturuluyor...</>
                     ) : (
-                      'Talep Oluştur'
+                      'Şoför Bul'
                     )}
                   </Button>
                   <Button
@@ -572,6 +641,7 @@ export const CustomerDashboard = () => {
             <OpenStreetMap
               center={activeBooking?.pickupLocation || currentLocation}
               customerLocation={currentLocation}
+              driverLocation={driverLiveLocation}
               drivers={availableDrivers
                 .filter(d => d.isAvailable && d.currentLocation)
                 .map(d => ({
@@ -583,7 +653,8 @@ export const CustomerDashboard = () => {
                 }))}
               destination={activeBooking?.dropoffLocation}
               pickupLocation={activeBooking?.pickupLocation}
-              showRoute={!!activeBooking}
+              dropoffLocation={activeBooking?.dropoffLocation}
+              showRoute={getRouteMode()}
             />
           ) : (
             <div className="h-full flex items-center justify-center bg-gray-900">
@@ -597,7 +668,13 @@ export const CustomerDashboard = () => {
           {/* Harita Bilgisi */}
           <div className="absolute bottom-4 left-4 right-4 lg:left-4 lg:right-auto lg:w-80 bg-gray-900/90 text-white text-sm px-4 py-3 rounded-lg flex items-center gap-2">
             <MapPin className="h-4 w-4 text-blue-400" />
-            <span>{activeBooking ? 'Aktif yolculuk haritada görünüyor' : 'Konumunuz ve yakın sürücüler haritada görünür'}</span>
+            <span>
+              {activeBooking?.status === 'driver_en_route' && 'Şoförünüzün konumu haritada görünüyor'}
+              {activeBooking?.status === 'in_progress' && 'Hedefe rota haritada görünüyor'}
+              {activeBooking?.status === 'driver_arrived' && 'Şoför sizi bekliyor!'}
+              {activeBooking?.status === 'pending' && 'Yakın şoförlere talep gönderildi'}
+              {!activeBooking && 'Konumunuz ve yakın sürücüler haritada görünür'}
+            </span>
           </div>
         </div>
       </div>

@@ -447,6 +447,9 @@ router.post('/accept', (req: Request, res: Response) => {
     r.driverId = driverId
     requests.set(requestId, r)
 
+    // Sürücü bilgilerini al
+    const driver = await getDriver(driverId)
+
     const d = drivers.get(driverId)
     if (d) {
       d.available = false
@@ -490,18 +493,25 @@ router.post('/accept', (req: Request, res: Response) => {
       booking = await updateBooking(r.id, { status: 'accepted', driverId } as any)
     }
 
+    // Driver bilgilerini booking'e ekle
+    const enrichedBooking = {
+      ...booking,
+      driverName: driver?.name || 'Şoför',
+      driverPhone: driver?.phone || ''
+    }
+
     try {
       const io = (req.app.get('io') as any)
-      io?.emit('booking:update', booking)
-      io?.to?.(`booking:${booking.id}`)?.emit?.('booking:update', booking)
+      io?.emit('booking:update', enrichedBooking)
+      io?.to?.(`booking:${booking.id}`)?.emit?.('booking:update', enrichedBooking)
       
       // Notify everyone that this request is TAKEN so they can remove it from list
       io?.emit('ride:taken', { requestId: r.id, driverId })
       
       // Also explicitly tell the driver who took it
-      io?.emit(`driver:${driverId}:assigned`, booking)
+      io?.emit(`driver:${driverId}:assigned`, enrichedBooking)
     } catch {}
-    res.json({ success: true, data: booking })
+    res.json({ success: true, data: enrichedBooking })
   })().catch(() => res.status(500).json({ success: false, error: 'accept_failed' }))
 })
 
