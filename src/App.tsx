@@ -161,22 +161,48 @@ export default function App() {
           </Routes>
         </ErrorBoundary>
         <Toaster 
-          position="bottom-right"
+          position="bottom-center"
           theme="dark"
-          duration={3000}
+          duration={2500}
           toastOptions={{
             style: {
               background: '#1f2937',
-              color: '#fff',
+              color: '#f3f4f6',
               border: '1px solid #374151',
-              borderRadius: '8px',
+              borderRadius: '12px',
               fontSize: '14px',
+              padding: '12px 16px',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
             },
-            className: 'bg-gray-800 border-gray-700',
+            className: 'toast-dark',
           }}
           richColors
-          closeButton
+          closeButton={false}
+          expand={false}
+          visibleToasts={3}
         />
+        <style>{`
+          .toast-dark {
+            font-family: system-ui, -apple-system, sans-serif;
+          }
+          [data-sonner-toast] {
+            background: #1f2937 !important;
+            color: #f3f4f6 !important;
+            border: 1px solid #374151 !important;
+          }
+          [data-sonner-toast][data-type="success"] {
+            border-left: 3px solid #22c55e !important;
+          }
+          [data-sonner-toast][data-type="error"] {
+            border-left: 3px solid #ef4444 !important;
+          }
+          [data-sonner-toast][data-type="info"] {
+            border-left: 3px solid #3b82f6 !important;
+          }
+          [data-sonner-toast][data-type="warning"] {
+            border-left: 3px solid #f59e0b !important;
+          }
+        `}</style>
       </I18nProvider>
     </Router>
   );
