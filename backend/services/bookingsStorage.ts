@@ -2,6 +2,22 @@ import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { logger } from '../utils/logger.js'
 
+export type BookingExtras = {
+  notes?: string
+  tags?: string[]
+  promoCode?: string
+  termsAccepted?: boolean
+  pricing?: {
+    driverPerKm: number
+    platformFeePercent: number
+    distanceKm: number
+    driverFare: number
+    platformFee: number
+    total: number
+    currency: string
+  }
+}
+
 export type BookingRecord = {
   id: string
   reservationCode: string
@@ -20,7 +36,7 @@ export type BookingRecord = {
   flightNumber?: string
   nameBoard?: string
   returnTrip?: { enabled: boolean, pickupTime?: string }
-  extras?: { notes?: string, tags?: string[], promoCode?: string, termsAccepted?: boolean }
+  extras?: BookingExtras
   status: 'pending'|'accepted'|'driver_en_route'|'driver_arrived'|'in_progress'|'completed'|'cancelled'
   basePrice: number
   finalPrice?: number
@@ -285,5 +301,29 @@ export async function updateBooking(id: string, patch: Partial<BookingRecord>) {
     logger.warn('bookings_supabase_update_failed', { id, reason: String(e?.message || e || 'unknown') })
   }
   return updated
+}
+
+// Pending durumundaki bookingleri listele
+export async function listPendingBookings(vehicleType?: string): Promise<BookingRecord[]> {
+  if (!supabase) {
+    let list = Array.from(memory.values()).filter(b => b.status === 'pending')
+    if (vehicleType) list = list.filter(b => b.vehicleType === vehicleType)
+    return list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+  }
+  try {
+    let query = supabase.from('bookings').select('*').eq('status', 'pending').order('created_at', { ascending: false })
+    if (vehicleType) {
+      query = query.eq('vehicle_type', vehicleType)
+    }
+    const { data, error } = await query
+    if (error) throw error
+    const arr = Array.isArray(data) ? data : []
+    const mapped = arr.map(mapRowToBooking)
+    mapped.forEach(b => memory.set(b.id, b))
+    return mapped
+  } catch (e: any) {
+    logger.warn('bookings_supabase_list_pending_failed', { reason: String(e?.message || e || 'unknown') })
+    return []
+  }
 }
 

@@ -18,6 +18,11 @@ const DriverLoginLazy = React.lazy(() => import('@/pages/driver/Login').then(m =
 const DriverApplyLazy = React.lazy(() => import('@/pages/driver/Apply').then(m => ({ default: m.DriverApply })));
 const AdminDriversLazy = React.lazy(() => import('@/pages/admin/Drivers').then(m => ({ default: m.AdminDrivers })));
 const AdminPricingLazy = React.lazy(() => import('@/pages/admin/Pricing').then(m => ({ default: m.AdminPricing })));
+const AdminDashboardLazy = React.lazy(() => import('@/pages/admin/Dashboard').then(m => ({ default: m.AdminDashboard })));
+const AdminBookingsLazy = React.lazy(() => import('@/pages/admin/Bookings').then(m => ({ default: m.AdminBookings })));
+const AdminCustomersLazy = React.lazy(() => import('@/pages/admin/Customers').then(m => ({ default: m.AdminCustomers })));
+const AdminFeedbackLazy = React.lazy(() => import('@/pages/admin/Feedback').then(m => ({ default: m.AdminFeedback })));
+const AdminSettingsLazy = React.lazy(() => import('@/pages/admin/Settings').then(m => ({ default: m.AdminSettings })));
 const ProfileLazy = React.lazy(() => import('@/pages/Profile').then(m => ({ default: m.Profile })));
 const ReservationNewLazy = React.lazy(() => import('@/pages/ReservationNew').then(m => ({ default: m.ReservationNew })));
 const ReservationsLazy = React.lazy(() => import('@/pages/Reservations').then(m => ({ default: m.Reservations })));
@@ -85,6 +90,13 @@ export default function App() {
             } />
 
             {/* Admin Routes - Without main Layout */}
+            <Route path="/admin" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <Suspense fallback={<LoadingFallback />}>
+                  <AdminDashboardLazy />
+                </Suspense>
+              </ProtectedRoute>
+            } />
             <Route path="/admin/drivers" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <Suspense fallback={<LoadingFallback />}>
@@ -92,10 +104,38 @@ export default function App() {
                 </Suspense>
               </ProtectedRoute>
             } />
+            <Route path="/admin/bookings" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <Suspense fallback={<LoadingFallback />}>
+                  <AdminBookingsLazy />
+                </Suspense>
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/customers" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <Suspense fallback={<LoadingFallback />}>
+                  <AdminCustomersLazy />
+                </Suspense>
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/feedback" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <Suspense fallback={<LoadingFallback />}>
+                  <AdminFeedbackLazy />
+                </Suspense>
+              </ProtectedRoute>
+            } />
             <Route path="/admin/pricing" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <Suspense fallback={<LoadingFallback />}>
                   <AdminPricingLazy />
+                </Suspense>
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/settings" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <Suspense fallback={<LoadingFallback />}>
+                  <AdminSettingsLazy />
                 </Suspense>
               </ProtectedRoute>
             } />

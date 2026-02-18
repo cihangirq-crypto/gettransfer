@@ -1,8 +1,54 @@
 import { Router, type Request, type Response } from 'express'
-import { createBooking, findBookingByPhoneAndCode, generateReservationCode, getBookingById, listBookingsByCustomer, listBookingsByDriver, storageMode, updateBooking } from '../services/bookingsStorage.js'
+import { createBooking, findBookingByPhoneAndCode, generateReservationCode, getBookingById, listBookingsByCustomer, listBookingsByDriver, storageMode, updateBooking, BookingRecord } from '../services/bookingsStorage.js'
 import { getDriver } from '../services/storage.js'
 import { verifyGuestToken } from '../services/guestToken.js'
 import { getPricingConfig } from '../services/pricingStorage.js'
+import { createClient } from '@supabase/supabase-js'
+
+const getEnv = (k: string) => {
+  const v = process.env[k]
+  return typeof v === 'string' && v.trim() ? v.trim() : null
+}
+
+const SUPABASE_URL = getEnv('SUPABASE_URL')
+const SUPABASE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('SUPABASE_ANON_KEY')
+const supabase = SUPABASE_URL && SUPABASE_KEY ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } }) : null
+
+// In-memory storage for fallback
+const memory: Map<string, BookingRecord> = new Map()
+
+// Helper to map database row to booking record
+const mapRowToBooking = (row: any): BookingRecord => ({
+  id: String(row.id),
+  reservationCode: String(row.reservation_code),
+  customerId: row.customer_id || undefined,
+  guestName: row.guest_name || undefined,
+  guestPhone: row.guest_phone || undefined,
+  driverId: row.driver_id || undefined,
+  pickupLocation: row.pickup_location,
+  dropoffLocation: row.dropoff_location,
+  pickupTime: row.pickup_time,
+  passengerCount: row.passenger_count,
+  adults: typeof row.adults === 'number' ? row.adults : undefined,
+  children: typeof row.children === 'number' ? row.children : undefined,
+  vehicleType: row.vehicle_type,
+  isImmediate: !!row.is_immediate,
+  flightNumber: row.flight_number || undefined,
+  nameBoard: row.name_board || undefined,
+  returnTrip: row.return_trip || undefined,
+  extras: row.extras || undefined,
+  status: row.status,
+  basePrice: Number(row.base_price || 0),
+  finalPrice: row.final_price !== null && row.final_price !== undefined ? Number(row.final_price) : undefined,
+  paymentStatus: row.payment_status || undefined,
+  paymentMethod: row.payment_method || undefined,
+  paidAt: row.paid_at || undefined,
+  route: row.route || undefined,
+  pickedUpAt: row.picked_up_at || undefined,
+  completedAt: row.completed_at || undefined,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+})
 
 const router = Router()
 
@@ -156,6 +202,35 @@ router.post('/create', (req: Request, res: Response) => {
     } catch {}
     res.json({ success: true, data: { ...enriched, storage: storageMode() } })
   })().catch(() => res.status(500).json({ success: false, error: 'create_failed' }))
+})
+
+// List all bookings (admin endpoint) - supports both /all and /list
+router.get(['/all', '/list'], async (req: Request, res: Response) => {
+  try {
+    if (!supabase) {
+      // Return from memory if no supabase
+      const allBookings = Array.from(memory.values())
+      const enriched = await Promise.all(allBookings.map(b => enrichBookingWithDriverInfo(b)))
+      res.json({ success: true, data: enriched.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')) })
+      return
+    }
+
+    const limit = Math.min(Number(req.query.limit) || 100, 500)
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (error) throw error
+
+    const bookings = (data || []).map(mapRowToBooking)
+    const enriched = await Promise.all(bookings.map(b => enrichBookingWithDriverInfo(b)))
+    res.json({ success: true, data: enriched })
+  } catch (err) {
+    console.error('List all bookings error:', err)
+    res.status(500).json({ success: false, error: 'list_failed' })
+  }
 })
 
 router.post('/:id/cancel', (req: Request, res: Response) => {
