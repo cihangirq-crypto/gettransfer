@@ -161,46 +161,82 @@ export default function App() {
           </Routes>
         </ErrorBoundary>
         <Toaster 
-          position="bottom-center"
+          position="top-center"
           theme="dark"
-          duration={2500}
+          duration={2000}
           toastOptions={{
             style: {
               background: '#1f2937',
               color: '#f3f4f6',
               border: '1px solid #374151',
-              borderRadius: '12px',
-              fontSize: '14px',
-              padding: '12px 16px',
-              boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
+              borderRadius: '8px',
+              fontSize: '13px',
+              padding: '10px 14px',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+              minWidth: '200px',
+              maxWidth: '350px',
             },
             className: 'toast-dark',
+            unstyled: false,
           }}
           richColors
           closeButton={false}
           expand={false}
-          visibleToasts={3}
+          visibleToasts={2}
+          gap={8}
         />
         <style>{`
-          .toast-dark {
-            font-family: system-ui, -apple-system, sans-serif;
+          /* Sonner Toast - Dark Theme Override */
+          [data-sonner-toaster] {
+            z-index: 9999 !important;
+            bottom: auto !important;
+            top: 80px !important;
           }
           [data-sonner-toast] {
             background: #1f2937 !important;
             color: #f3f4f6 !important;
             border: 1px solid #374151 !important;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
           }
           [data-sonner-toast][data-type="success"] {
             border-left: 3px solid #22c55e !important;
+            background: linear-gradient(90deg, rgba(34,197,94,0.15) 0%, #1f2937 30%) !important;
           }
           [data-sonner-toast][data-type="error"] {
             border-left: 3px solid #ef4444 !important;
+            background: linear-gradient(90deg, rgba(239,68,68,0.15) 0%, #1f2937 30%) !important;
           }
           [data-sonner-toast][data-type="info"] {
             border-left: 3px solid #3b82f6 !important;
+            background: linear-gradient(90deg, rgba(59,130,246,0.15) 0%, #1f2937 30%) !important;
           }
           [data-sonner-toast][data-type="warning"] {
             border-left: 3px solid #f59e0b !important;
+            background: linear-gradient(90deg, rgba(245,158,11,0.15) 0%, #1f2937 30%) !important;
+          }
+          [data-sonner-toast] [data-title] {
+            color: #f3f4f6 !important;
+            font-weight: 500 !important;
+          }
+          [data-sonner-toast] [data-description] {
+            color: #9ca3af !important;
+          }
+          [data-sonner-toast] [data-icon] {
+            color: inherit !important;
+          }
+          /* Animasyon */
+          [data-sonner-toast] {
+            animation: slideIn 0.2s ease-out !important;
+          }
+          @keyframes slideIn {
+            from {
+              transform: translateY(-20px);
+              opacity: 0;
+            }
+            to {
+              transform: translateY(0);
+              opacity: 1;
+            }
           }
         `}</style>
       </I18nProvider>
