@@ -394,6 +394,42 @@ router.post('/request', async (req: Request, res: Response) => {
     res.status(400).json({ success: false, error: 'invalid_payload' })
     return
   }
+  
+  // Talebi doğrudan bookings tablosuna kaydet (kalıcı depolama)
+  const now = new Date().toISOString()
+  const pricing = await getPricingConfig().catch(() => null)
+  const distKm = round2(haversine(pickup, dropoff) / 1000)
+  const driverPerKm = pricing?.driverPerKm ?? 1
+  const feePct = pricing?.platformFeePercent ?? 3
+  const driverFare = round2(distKm * driverPerKm)
+  const total = round2(driverFare * (1 + feePct / 100))
+  const reservationCode = await generateReservationCode()
+  
+  const bookingData = {
+    id,
+    reservationCode,
+    customerId,
+    driverId: targetDriverId || undefined,
+    pickupLocation: { lat: pickup.lat, lng: pickup.lng, address: pickup.address || 'Alış Noktası' },
+    dropoffLocation: { lat: dropoff.lat, lng: dropoff.lng, address: dropoff.address || 'Varış Noktası' },
+    pickupTime: now,
+    passengerCount: passengerCount || 1,
+    vehicleType,
+    status: 'pending' as const,
+    basePrice: driverFare,
+    finalPrice: total,
+    paymentStatus: 'unpaid' as const,
+    extras: { pricing: { driverPerKm, platformFeePercent: feePct, distanceKm: distKm, driverFare, platformFee: round2(total - driverFare), total, currency: pricing?.currency || 'EUR' } },
+  }
+  
+  try {
+    await createBooking(bookingData)
+    console.log('Ride request saved to bookings:', id)
+  } catch (e) {
+    console.error('Failed to save ride request:', e)
+  }
+  
+  // Ayrıca bellekte de tut (geriye dönük uyumluluk için)
   const r: RideRequest = {
     id,
     customerId,
@@ -406,12 +442,15 @@ router.post('/request', async (req: Request, res: Response) => {
     targetDriverId: typeof targetDriverId === 'string' && targetDriverId.trim() ? targetDriverId.trim() : undefined,
   }
   requests.set(id, r)
+  
   const preFilter = bboxFilter(pickup, 3000)
   let pool: DriverSession[] = []
   try { pool = await listDriversByStatus('approved') } catch { pool = Array.from(drivers.values()).filter(d=>d.approved) }
   const candidates = pool.filter(d => d.available && d.vehicleType === vehicleType && preFilter(d.location))
   const targeted = r.targetDriverId ? candidates.filter(d => d.id === r.targetDriverId) : candidates
   const sorted = targeted.sort((a, b) => haversine(pickup, a.location) - haversine(pickup, b.location))
+  
+  // Socket ile sürücülere bildir
   try { 
       const io = req.app.get('io') as any
       // Broadcast to ALL drivers initially, client side filters if it is relevant
@@ -422,27 +461,100 @@ router.post('/request', async (req: Request, res: Response) => {
          io?.emit(`driver:${r.targetDriverId}:request`, r)
       }
   } catch {}
+  
   res.json({ success: true, data: { request: r, candidates: sorted.slice(0, 10) } })
 })
 
-router.get('/requests', (req: Request, res: Response) => {
+router.get('/requests', async (req: Request, res: Response) => {
   const vt = req.query.vehicleType as string
-  const list = Array.from(requests.values()).filter(r => r.status === 'pending' && (!vt || r.vehicleType === vt))
-  res.json({ success: true, data: list })
+  
+  // Önce bellekteki talepleri al
+  const memoryList = Array.from(requests.values()).filter(r => r.status === 'pending' && (!vt || r.vehicleType === vt))
+  
+  // Ayrıca Supabase'ten pending status'li bookingleri çek
+  let dbList: RideRequest[] = []
+  try {
+    const SUPABASE_URL = process.env.SUPABASE_URL
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+    
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      let query = 'status=eq.pending&select=*'
+      if (vt) query += `&vehicle_type=eq.${vt}`
+      
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/bookings?${query}`, {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+        }
+      })
+      
+      if (response.ok) {
+        const rows = await response.json()
+        if (Array.isArray(rows)) {
+          dbList = rows.map((row: any) => ({
+            id: row.id,
+            customerId: row.customer_id,
+            passengerCount: row.passenger_count,
+            basePrice: row.base_price,
+            pickup: row.pickup_location,
+            dropoff: row.dropoff_location,
+            vehicleType: row.vehicle_type,
+            status: 'pending' as const,
+            targetDriverId: row.driver_id || undefined,
+          }))
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to fetch pending bookings:', e)
+  }
+  
+  // İki listeyi birleştir (duplicate'leri kaldır)
+  const allRequests = [...dbList]
+  for (const r of memoryList) {
+    if (!allRequests.some(x => x.id === r.id)) {
+      allRequests.push(r)
+    }
+  }
+  
+  res.json({ success: true, data: allRequests })
 })
 
 router.post('/accept', (req: Request, res: Response) => {
   const { driverId, requestId } = req.body || {}
-  const r = requests.get(requestId)
-  if (!r) {
-    res.status(404).json({ success: false, error: 'request_not_found' })
-    return
-  }
-  if (r.targetDriverId && r.targetDriverId !== driverId) {
-    res.status(409).json({ success: false, error: 'not_target_driver' })
-    return
-  }
+  
   ;(async () => {
+    // Önce bellekte ara, yoksa veritabanından çek
+    let r = requests.get(requestId)
+    
+    if (!r) {
+      // Veritabanından pending booking'i ara
+      const booking = await getBookingById(requestId)
+      if (booking && booking.status === 'pending') {
+        r = {
+          id: booking.id,
+          customerId: booking.customerId || '',
+          passengerCount: booking.passengerCount,
+          basePrice: booking.basePrice,
+          pickup: booking.pickupLocation,
+          dropoff: booking.dropoffLocation,
+          vehicleType: booking.vehicleType as any,
+          status: 'pending',
+          targetDriverId: booking.driverId,
+        }
+      }
+    }
+    
+    if (!r) {
+      res.status(404).json({ success: false, error: 'request_not_found' })
+      return
+    }
+    
+    if (r.targetDriverId && r.targetDriverId !== driverId) {
+      res.status(409).json({ success: false, error: 'not_target_driver' })
+      return
+    }
+    
     r.status = 'accepted'
     r.driverId = driverId
     requests.set(requestId, r)

@@ -114,3 +114,57 @@ export async function checkBookingsTable() {
   }
 }
 
+export async function checkDriversTable() {
+  const dbUrl = getEnv('SUPABASE_DB_URL')
+  if (!dbUrl) return { ok: false as const, error: 'SUPABASE_DB_URL_missing' as const }
+  const client = new Client({
+    connectionString: dbUrl,
+    ssl: { rejectUnauthorized: false } as any,
+    connectionTimeoutMillis: 8000,
+    query_timeout: 15000,
+  } as any)
+  await client.connect()
+  try {
+    const r = await client.query(`select to_regclass('public.drivers') as reg`)
+    const exists = !!r?.rows?.[0]?.reg
+    return { ok: true as const, exists }
+  } catch (e: any) {
+    return { ok: false as const, error: 'check_failed' as const, reason: String(e?.message || e || 'unknown') }
+  } finally {
+    try { await client.end() } catch {}
+  }
+}
+
+// REST API ile tablo oluştur (DB URL olmadan)
+export async function bootstrapDriversTableViaREST() {
+  const SUPABASE_URL = getEnv('SUPABASE_URL')
+  const SUPABASE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('SUPABASE_ANON_KEY')
+  
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    return { ok: false as const, error: 'Supabase credentials missing' }
+  }
+  
+  // Supabase REST API ile drivers tablosu için RLS policy kontrolü
+  // Not: REST API ile tablo oluşturulamaz, ama en azından veri eklenebilir mi kontrol edelim
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/drivers?limit=1`, {
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+      }
+    })
+    
+    if (response.ok) {
+      return { ok: true as const, exists: true }
+    }
+    
+    if (response.status === 404) {
+      return { ok: true as const, exists: false }
+    }
+    
+    return { ok: false as const, error: `HTTP ${response.status}` }
+  } catch (e: any) {
+    return { ok: false as const, error: String(e?.message || e || 'unknown') }
+  }
+}
+

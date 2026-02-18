@@ -34,10 +34,41 @@ create index if not exists bookings_customer_id_idx on public.bookings (customer
 create index if not exists bookings_guest_phone_idx on public.bookings (guest_phone);
 create index if not exists bookings_reservation_lookup_idx on public.bookings (guest_phone, reservation_code);
 create index if not exists bookings_pickup_time_idx on public.bookings (pickup_time);
+create index if not exists bookings_status_idx on public.bookings (status);
 
 create table if not exists public.app_settings (
   key text primary key,
   value jsonb not null,
   updated_at timestamptz not null default now()
 );
+
+-- Drivers table
+create table if not exists public.drivers (
+  id text primary key,
+  name text not null default 'Sürücü',
+  email text,
+  phone text,
+  address text,
+  password_hash text,
+  password_salt text,
+  vehicle_type text not null default 'sedan',
+  vehicle_model text,
+  license_plate text,
+  docs jsonb,
+  location_lat double precision default 0,
+  location_lng double precision default 0,
+  available boolean default false,
+  approved boolean default false,
+  rejected_reason text,
+  driver_per_km double precision,
+  platform_fee_percent double precision,
+  custom_pricing boolean default false,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists drivers_email_idx on public.drivers (email);
+create index if not exists drivers_approved_idx on public.drivers (approved);
+create index if not exists drivers_available_idx on public.drivers (available);
+create index if not exists drivers_location_idx on public.drivers (location_lat, location_lng);
 
