@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavigate } from 'react-router-dom'
 import { DEFAULT_CENTER } from '@/config/env'
+import { API } from '@/utils/api'
 import type { User as UserType } from '@/types'
 import { Car, User, ArrowLeft, FileText, Upload, MapPin, Phone, Home } from 'lucide-react'
 
@@ -59,6 +60,11 @@ export const DriverApply: React.FC = () => {
     if (!form.name) { toast.error('Ad Soyad gerekli'); return }
     if (!form.phone) { toast.error('Telefon numarası gerekli'); return }
     if (!form.address) { toast.error('Adres gerekli'); return }
+    // Konum kontrolü - (0, 0) geçersiz
+    if (!form.lat || !form.lng || (form.lat === 0 && form.lng === 0)) {
+      toast.error('Konum gerekli! Lütfen haritadan konumunuzu seçin veya tarayıcınıza konum izni verin.')
+      return
+    }
     for (const n of requiredDocs) { if (!docs[n.key]) { toast.error(`Eksik belge: ${n.label}`); return } }
     try {
       if (!form.email) { toast.error('E-posta gerekli'); return }
@@ -75,10 +81,11 @@ export const DriverApply: React.FC = () => {
         docs: requiredDocs.map(n => ({ name: n.key, url: docs[n.key] })),
         location: { lat: form.lat, lng: form.lng }
       }
-      const res = await fetch('/api/drivers/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const res = await fetch(`${API}/drivers/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const j = await res.json()
       if (!res.ok || !j.success) {
         if (j.error === 'docs_required') throw new Error('Lütfen tüm belgeleri eksiksiz yükleyin')
+        if (j.error === 'invalid_payload_location_required') throw new Error('Konum bilgisi gerekli. Lütfen haritadan konumunuzu seçin.')
         if (j.error === 'invalid_payload') throw new Error('Form verileri eksik veya geçersiz')
         throw new Error(j.error || 'Başvuru sırasında sunucu hatası oluştu')
       }
@@ -274,12 +281,18 @@ export const DriverApply: React.FC = () => {
 
             {/* Submit */}
             <div className="pt-4">
+              {/* Konum durumu göster */}
+              {(form.lat === 0 && form.lng === 0) && (
+                <p className="text-yellow-400 text-sm mb-3 text-center">
+                  ⚠️ Konum gereklidir - GPS izni verin veya haritaya tıklayın
+                </p>
+              )}
               <Button
                 onClick={submit}
-                disabled={locating || !form.lat}
-                className="w-full bg-green-600 hover:bg-green-700 py-3 text-lg"
+                disabled={locating || (form.lat === 0 && form.lng === 0)}
+                className="w-full bg-green-600 hover:bg-green-700 py-3 text-lg disabled:opacity-50"
               >
-                Başvuruyu Gönder
+                {locating ? 'Konum alınıyor...' : 'Başvuruyu Gönder'}
               </Button>
             </div>
           </div>

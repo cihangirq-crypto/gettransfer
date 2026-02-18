@@ -163,11 +163,12 @@ const TEST_DRIVER_DATA: Record<string, Partial<DriverSession>> = {
   }
 }
 
-// Test sürücülerinin eksik verilerini tamamla
+// Test sürücülerinin eksik verilerini tamamla (isim, tel vs - KONUM HARİÇ)
 function enrichTestDriver(driver: DriverSession): DriverSession {
   const testData = TEST_DRIVER_DATA[driver.id]
   if (!testData) return driver
   
+  // Sürücü verilerini tamamla ama KONUMU DEĞİŞTİRME - gerçek GPS konumu kullanılacak
   return {
     ...driver,
     name: driver.name && driver.name !== 'Sürücü' ? driver.name : testData.name || driver.name,
@@ -176,7 +177,8 @@ function enrichTestDriver(driver: DriverSession): DriverSession {
     vehicleModel: driver.vehicleModel || testData.vehicleModel,
     licensePlate: driver.licensePlate || testData.licensePlate,
     docs: Array.isArray(driver.docs) && driver.docs.length > 0 ? driver.docs : testData.docs,
-    location: (driver.location?.lat !== 0 && driver.location?.lng !== 0) ? driver.location : (testData.location || driver.location),
+    // KONUM DEĞİŞTİRİLMIYOR - gerçek GPS konumu korunuyor
+    location: driver.location,
   }
 }
 

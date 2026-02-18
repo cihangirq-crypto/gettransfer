@@ -106,25 +106,85 @@ export default function Home() {
     checkActiveBooking()
   }, [user, currentBooking, setCurrentBooking])
 
-  // Otomatik konum al
+  // Otomatik konum al - GPS + Fallback
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setCurrentLocation(loc);
-          refreshApprovedDriversNear(loc);
-          startRealTimeUpdates();
-        },
-        () => {
-          toast.error('Konum izni verilmedi');
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    }
+    let mounted = true
     
-    return () => stopRealTimeUpdates();
-  }, []);
+    const fetchIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
+      try {
+        const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(5000) })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.latitude && data.longitude) return { lat: data.latitude, lng: data.longitude }
+        }
+      } catch { /* ignore */ }
+      try {
+        const res = await fetch('https://ip-api.com/json/', { signal: AbortSignal.timeout(5000) })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.lat && data.lon) return { lat: data.lat, lng: data.lon }
+        }
+      } catch { /* ignore */ }
+      return null
+    }
+
+    const initLocation = async () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (!mounted) return
+            const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+            console.log('✅ GPS konumu alındı:', loc)
+            setCurrentLocation(loc)
+            refreshApprovedDriversNear(loc)
+            startRealTimeUpdates()
+          },
+          async (err) => {
+            console.warn('GPS hatası, IP konumu deneniyor:', err.message)
+            if (!mounted) return
+            
+            // IP bazlı konum dene
+            const ipLoc = await fetchIpLocation()
+            if (ipLoc && mounted) {
+              console.log('✅ IP konumu alındı:', ipLoc)
+              setCurrentLocation(ipLoc)
+              refreshApprovedDriversNear(ipLoc)
+              startRealTimeUpdates()
+              toast.info('Yaklaşık konumunuz kullanılıyor')
+            } else if (mounted) {
+              // Varsayılan (Antalya merkez)
+              const defaultLoc = { lat: 36.88, lng: 30.7 }
+              setCurrentLocation(defaultLoc)
+              refreshApprovedDriversNear(defaultLoc)
+              startRealTimeUpdates()
+              toast.warning('Konum alınamadı, haritadan seçim yapabilirsiniz')
+            }
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+        )
+      } else {
+        // GPS yok - IP bazlı konum
+        const ipLoc = await fetchIpLocation()
+        if (ipLoc && mounted) {
+          setCurrentLocation(ipLoc)
+          refreshApprovedDriversNear(ipLoc)
+          startRealTimeUpdates()
+        } else if (mounted) {
+          const defaultLoc = { lat: 36.88, lng: 30.7 }
+          setCurrentLocation(defaultLoc)
+          refreshApprovedDriversNear(defaultLoc)
+          startRealTimeUpdates()
+        }
+      }
+    }
+
+    initLocation()
+    
+    return () => { 
+      mounted = false
+      stopRealTimeUpdates()
+    }
+  }, [])
 
   // Konum algılandığında
   const handleLocationDetected = (location: { lat: number; lng: number }) => {

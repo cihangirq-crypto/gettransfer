@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { io, type Socket } from 'socket.io-client'
-import OpenStreetMap from '@/components/OpenStreetMap'
+import NavigationMap from '@/components/NavigationMap'
 import { Button } from '@/components/ui/Button'
 import { useBookingStore } from '@/stores/bookingStore'
-import { Clock, Car } from 'lucide-react'
+import { Clock, Car, Phone, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { currencySymbol } from '@/utils/pricing'
 
@@ -222,13 +222,20 @@ export const TrackingPage: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white rounded-lg shadow overflow-hidden">
             <div className="h-[520px]">
-              <OpenStreetMap
-                center={mapCenter}
-                customerLocation={customerLocation || booking.pickupLocation}
+              <NavigationMap
+                mode="customer"
+                origin={driverLocation}
                 destination={booking.dropoffLocation}
-                drivers={driverMarker}
-                highlightDriverId={booking.driverId}
-                path={mapPath}
+                pickup={booking.pickupLocation}
+                status={
+                  booking.status === 'driver_en_route' ? 'navigating_to_pickup' :
+                  booking.status === 'in_progress' ? 'navigating_to_dropoff' :
+                  'waiting'
+                }
+                onRouteUpdate={(distance, duration) => {
+                  console.log('Customer route:', distance, 'm', duration, 's')
+                }}
+                className="h-full w-full"
               />
             </div>
           </div>

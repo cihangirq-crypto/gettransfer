@@ -203,6 +203,62 @@ router.get('/geocode', async (req: Request, res: Response): Promise<void> => {
   }
 })
 
+// OSRM Route API - Ücretsiz, API key gerektirmez
+router.get('/route', async (req: Request, res: Response): Promise<void> => {
+  const { startLat, startLng, endLat, endLng } = req.query
+
+  if (!startLat || !startLng || !endLat || !endLng) {
+    res.status(400).json({ success: false, error: 'Koordinatlar gerekli' })
+    return
+  }
+
+  try {
+    // OSRM Demo Server - Ücretsiz
+    const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&alternatives=false&steps=true`
+
+    const response = await fetch(url)
+    const data = await response.json()
+
+    if (data.code !== 'Ok') {
+      res.status(400).json({ success: false, error: 'Rota bulunamadı' })
+      return
+    }
+
+    const route = data.routes[0]
+    
+    // GeoJSON coordinates [lng, lat] -> {lat, lng}
+    const coordinates = route.geometry.coordinates.map((c: number[]) => ({
+      lng: c[0],
+      lat: c[1]
+    }))
+
+    // Manevra adımları
+    const steps = route.legs[0].steps.map((step: any) => ({
+      distance: step.distance,
+      duration: step.duration,
+      instruction: step.maneuver?.type || '',
+      name: step.name || '',
+      location: step.maneuver?.location ? {
+        lng: step.maneuver.location[0],
+        lat: step.maneuver.location[1]
+      } : null
+    }))
+
+    res.json({ 
+      success: true, 
+      data: {
+        distance: route.distance,
+        duration: route.duration,
+        geometry: coordinates,
+        steps
+      }
+    })
+  } catch (error: any) {
+    console.error('OSRM route error:', error)
+    res.status(500).json({ success: false, error: error.message || 'Rota hesaplama hatası' })
+  }
+})
+
 // Reverse Geocoding - Coordinates to address
 router.get('/reverse-geocode', async (req: Request, res: Response): Promise<void> => {
   const { lat, lng } = req.query

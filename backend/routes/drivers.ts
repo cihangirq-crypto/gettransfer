@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express'
 import crypto from 'crypto'
 import { saveDriver, getDriver, listDriversByStatus, approveDriver, rejectDriver, updateDriverPartial, deleteDriver } from '../services/storage.js'
 import { diagnoseSupabase } from '../services/storage.js'
-import { createBooking, generateReservationCode, getBookingById, updateBooking } from '../services/bookingsStorage.js'
+import { createBooking, generateReservationCode, getBookingById, updateBooking, listPendingBookings } from '../services/bookingsStorage.js'
 import { getPricingConfig } from '../services/pricingStorage.js'
 
 const router = Router()
@@ -52,7 +52,15 @@ type RideRequest = {
 const drivers: Map<string, DriverSession> = new Map()
 const requests: Map<string, RideRequest> = new Map()
 const complaints: Array<{ id: string, driverId: string, text: string, createdAt: string }> = []
-const isValidLatLng = (p: any) => typeof p?.lat === 'number' && typeof p?.lng === 'number' && isFinite(p.lat) && isFinite(p.lng) && p.lat >= -90 && p.lat <= 90 && p.lng >= -180 && p.lng <= 180
+// Konum doğrulama - (0,0) geçersiz sayılır (Afrika açıkları)
+const isValidLatLng = (p: any) => {
+  if (typeof p?.lat !== 'number' || typeof p?.lng !== 'number') return false
+  if (!isFinite(p.lat) || !isFinite(p.lng)) return false
+  if (p.lat < -90 || p.lat > 90 || p.lng < -180 || p.lng > 180) return false
+  // (0, 0) koordinatları geçersiz - hiçbir sürücü Afrika açıklarında olamaz
+  if (p.lat === 0 && p.lng === 0) return false
+  return true
+}
 const liveLocationTs: Map<string, number> = new Map()
 const lastPersisted: Map<string, { ts: number, loc: { lat: number, lng: number } }> = new Map()
 const LOCATION_PERSIST_MIN_INTERVAL_MS = 30_000
@@ -279,10 +287,14 @@ router.post('/location', async (req: Request, res: Response) => {
   }
   const now = Date.now()
   const hasLoc = location && isValidLatLng(location)
+  
+  // GERÇEK GPS konumunu kaydet
   if (hasLoc) {
     d.location = location
     liveLocationTs.set(id, now)
+    console.log('📍 Sürücü konumu güncellendi:', id, location)
   }
+  
   if (typeof available === 'boolean') d.available = available
   drivers.set(id, d)
   
@@ -290,7 +302,6 @@ router.post('/location', async (req: Request, res: Response) => {
   try { (req.app.get('io') as any)?.emit('driver:update', d) } catch {}
   
   // SERVERLESS: Her konum güncellemesini ANINDA veritabanına yaz
-  // Çünkü bellek bir sonraki request'te kaybolabilir
   if (hasLoc || typeof available === 'boolean') {
     try { await saveDriver(d) } catch {}
   }
@@ -468,56 +479,38 @@ router.post('/request', async (req: Request, res: Response) => {
 router.get('/requests', async (req: Request, res: Response) => {
   const vt = req.query.vehicleType as string
   
-  // Önce bellekteki talepleri al
-  const memoryList = Array.from(requests.values()).filter(r => r.status === 'pending' && (!vt || r.vehicleType === vt))
-  
-  // Ayrıca Supabase'ten pending status'li bookingleri çek
-  let dbList: RideRequest[] = []
   try {
-    const SUPABASE_URL = process.env.SUPABASE_URL
-    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+    // Supabase'ten pending bookingleri çek (artık calisiyor)
+    const pendingBookings = await listPendingBookings(vt || undefined)
     
-    if (SUPABASE_URL && SUPABASE_KEY) {
-      let query = 'status=eq.pending&select=*'
-      if (vt) query += `&vehicle_type=eq.${vt}`
-      
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/bookings?${query}`, {
-        headers: {
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
-        }
-      })
-      
-      if (response.ok) {
-        const rows = await response.json()
-        if (Array.isArray(rows)) {
-          dbList = rows.map((row: any) => ({
-            id: row.id,
-            customerId: row.customer_id,
-            passengerCount: row.passenger_count,
-            basePrice: row.base_price,
-            pickup: row.pickup_location,
-            dropoff: row.dropoff_location,
-            vehicleType: row.vehicle_type,
-            status: 'pending' as const,
-            targetDriverId: row.driver_id || undefined,
-          }))
-        }
+    const dbList: RideRequest[] = pendingBookings.map((b: any) => ({
+      id: b.id,
+      customerId: b.customerId || '',
+      passengerCount: b.passengerCount,
+      basePrice: b.basePrice,
+      pickup: b.pickupLocation,
+      dropoff: b.dropoffLocation,
+      vehicleType: b.vehicleType,
+      status: 'pending' as const,
+      targetDriverId: b.driverId || undefined,
+    }))
+    
+    // Bellekteki talepleri de ekle (duplicate kontrolü ile)
+    const memoryList = Array.from(requests.values()).filter(r => r.status === 'pending' && (!vt || r.vehicleType === vt))
+    const allRequests = [...dbList]
+    for (const r of memoryList) {
+      if (!allRequests.some(x => x.id === r.id)) {
+        allRequests.push(r)
       }
     }
+    
+    res.json({ success: true, data: allRequests })
   } catch (e) {
     console.error('Failed to fetch pending bookings:', e)
+    // Fallback to memory
+    const memoryList = Array.from(requests.values()).filter(r => r.status === 'pending' && (!vt || r.vehicleType === vt))
+    res.json({ success: true, data: memoryList })
   }
-  
-  // İki listeyi birleştir (duplicate'leri kaldır)
-  const allRequests = [...dbList]
-  for (const r of memoryList) {
-    if (!allRequests.some(x => x.id === r.id)) {
-      allRequests.push(r)
-    }
-  }
-  
-  res.json({ success: true, data: allRequests })
 })
 
 router.post('/accept', (req: Request, res: Response) => {

@@ -102,41 +102,144 @@ export const CustomerDashboard = () => {
     }
   }, [activeBooking?.id, setCurrentBooking])
 
-  // Otomatik konum al
+  // POLLING - Booking durumunu düzenli kontrol et (Socket.io çalışmayabilir)
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async pos => {
-          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude }
-          setCurrentLocation(loc)
-          refreshApprovedDriversNear(loc)
-          startRealTimeUpdates()
-          
-          // Adresi ters geocoding ile al
-          try {
-            const res = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc.lat}&lon=${loc.lng}&accept-language=tr`,
-              { headers: { 'User-Agent': 'GetTransfer/1.0' } }
-            )
-            const data = await res.json()
-            if (data.display_name) {
-              setCurrentAddress(data.display_name)
-              if (!pickup) {
-                setPickup(data.display_name)
-                setPickupLocation(loc)
-              }
+    if (!currentBooking?.id) return
+    
+    const pollBooking = async () => {
+      try {
+        const res = await fetch(`${API}/bookings/${currentBooking.id}`)
+        const j = await res.json()
+        if (j?.success && j?.data) {
+          // Durum değişti mi kontrol et
+          if (j.data.status !== currentBooking.status) {
+            console.log('📊 Booking durumu güncellendi:', currentBooking.status, '→', j.data.status)
+            setCurrentBooking(j.data)
+            
+            // Bildirim göster
+            if (j.data.status === 'accepted' || j.data.status === 'driver_en_route') {
+              toast.success('🚗 Şoför yola çıktı!')
+            } else if (j.data.status === 'driver_arrived') {
+              toast.success('✅ Şoför geldi!')
+            } else if (j.data.status === 'in_progress') {
+              toast.success('🛣️ Yolculuk başladı!')
+            } else if (j.data.status === 'completed') {
+              toast.success('🎉 Yolculuk tamamlandı!')
             }
-          } catch {
-            /* ignore */
           }
-        },
-        () => {
-          toast.error('Konum alınamadı, lütfen manuel girin')
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      )
+        }
+      } catch { /* ignore */ }
     }
-    return () => { stopRealTimeUpdates() }
+    
+    // Her 2 saniyede bir kontrol et
+    const interval = setInterval(pollBooking, 2000)
+    
+    // İlk başta hemen kontrol et
+    pollBooking()
+    
+    return () => clearInterval(interval)
+  }, [currentBooking?.id, currentBooking?.status, setCurrentBooking])
+
+  // Otomatik konum al - GPS + Fallback
+  useEffect(() => {
+    let mounted = true
+    
+    const fetchIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
+      try {
+        const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(5000) })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.latitude && data.longitude) return { lat: data.latitude, lng: data.longitude }
+        }
+      } catch { /* ignore */ }
+      try {
+        const res = await fetch('https://ip-api.com/json/', { signal: AbortSignal.timeout(5000) })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.lat && data.lon) return { lat: data.lat, lng: data.lon }
+        }
+      } catch { /* ignore */ }
+      return null
+    }
+
+    const getAndSetAddress = async (loc: { lat: number; lng: number }) => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc.lat}&lon=${loc.lng}&accept-language=tr`,
+          { headers: { 'User-Agent': 'GetTransfer/1.0' } }
+        )
+        const data = await res.json()
+        if (data.display_name && mounted) {
+          setCurrentAddress(data.display_name)
+          if (!pickup) {
+            setPickup(data.display_name)
+            setPickupLocation(loc)
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    const initLocation = async () => {
+      // Önce GPS dene
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            if (!mounted) return
+            const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+            console.log('✅ GPS konumu alındı:', loc)
+            setCurrentLocation(loc)
+            refreshApprovedDriversNear(loc)
+            startRealTimeUpdates()
+            getAndSetAddress(loc)
+          },
+          async (err) => {
+            console.warn('GPS hatası, IP konumu deneniyor:', err.message)
+            if (!mounted) return
+            
+            // GPS başarısız - IP bazlı konum dene
+            const ipLoc = await fetchIpLocation()
+            if (ipLoc && mounted) {
+              console.log('✅ IP konumu alındı:', ipLoc)
+              setCurrentLocation(ipLoc)
+              refreshApprovedDriversNear(ipLoc)
+              startRealTimeUpdates()
+              getAndSetAddress(ipLoc)
+              toast.info('Yaklaşık konumunuz kullanılıyor')
+            } else if (mounted) {
+              // Hiçbir şekilde konum alınamadı - varsayılan (Antalya merkez)
+              const defaultLoc = { lat: 36.88, lng: 30.7 }
+              console.log('⚠️ Varsayılan konum kullanılıyor')
+              setCurrentLocation(defaultLoc)
+              refreshApprovedDriversNear(defaultLoc)
+              startRealTimeUpdates()
+              toast.warning('Konum alınamadı, haritadan seçim yapabilirsiniz')
+            }
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+        )
+      } else {
+        // GPS yok - IP bazlı konum
+        const ipLoc = await fetchIpLocation()
+        if (ipLoc && mounted) {
+          setCurrentLocation(ipLoc)
+          refreshApprovedDriversNear(ipLoc)
+          startRealTimeUpdates()
+          getAndSetAddress(ipLoc)
+        } else if (mounted) {
+          const defaultLoc = { lat: 36.88, lng: 30.7 }
+          setCurrentLocation(defaultLoc)
+          refreshApprovedDriversNear(defaultLoc)
+          startRealTimeUpdates()
+        }
+      }
+    }
+
+    initLocation()
+    
+    return () => { 
+      mounted = false
+      stopRealTimeUpdates() 
+    }
   }, [])
 
   // Aktif booking'i backend'den de kontrol et

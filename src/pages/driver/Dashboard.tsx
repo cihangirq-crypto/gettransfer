@@ -6,9 +6,8 @@ import OpenStreetMap from '@/components/OpenStreetMap'
 import { Button } from '@/components/ui/Button'
 import { DriverLayout } from '@/components/DriverLayout'
 import { io as ioClient, type Socket } from 'socket.io-client'
-import { MapPin, Phone, Navigation, CheckCircle, XCircle, Clock, Coffee, Settings, FileText, User, ChevronRight, Car, Users, DollarSign, Route, PlayCircle } from 'lucide-react'
+import { Phone, Navigation, CheckCircle, XCircle, Clock, Coffee, Settings, FileText, User, ChevronRight, Users, PlayCircle } from 'lucide-react'
 import { toast } from 'sonner'
-import { DEFAULT_CENTER } from '@/config/env'
 import { useNavigate } from 'react-router-dom'
 import { API } from '@/utils/api'
 
@@ -105,114 +104,147 @@ export const DriverDashboard = () => {
     return () => clearInterval(interval)
   }, [me, refreshRequests])
 
-  // Location tracking
+  // Location tracking - GERÇEK GPS KONUMU + FALLBACK
   const lastLocRef = useRef<{lat:number, lng:number, time:number}|null>(null)
-
-  const fetchIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
-    try {
-      const res = await fetch('https://ipapi.co/json/')
-      if (res.ok) {
-        const data = await res.json()
-        if (data.latitude && data.longitude) return { lat: data.latitude, lng: data.longitude }
-      }
-    } catch { /* ignore */ }
-    try {
-      const res = await fetch('https://ip-api.com/json/')
-      if (res.ok) {
-        const data = await res.json()
-        if (data.lat && data.lon) return { lat: data.lat, lng: data.lon }
-      }
-    } catch { /* ignore */ }
-    return null
-  }
 
   useEffect(() => {
     if (!me?.id) return
 
     let watchIdLocal: number | null = null
-    let ipLocationAttempted = false
+    let mounted = true
 
-    if (navigator.geolocation) {
-      watchIdLocal = navigator.geolocation.watchPosition(
-        (p) => {
-          setLocationSource('gps')
-
-          const newLat = p.coords.latitude
-          const newLng = p.coords.longitude
-          const now = Date.now()
-
-          let shouldUpdate = false
-
-          if (!lastLocRef.current) {
-            shouldUpdate = true
-          } else {
-            const { lat: oldLat, lng: oldLng, time: oldTime } = lastLocRef.current
-            const timeDiff = now - oldTime
-
-            const R = 6371e3
-            const φ1 = oldLat * Math.PI/180
-            const φ2 = newLat * Math.PI/180
-            const Δφ = (newLat-oldLat) * Math.PI/180
-            const Δλ = (newLng-oldLng) * Math.PI/180
-            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                      Math.cos(φ1) * Math.cos(φ2) *
-                      Math.sin(Δλ/2) * Math.sin(Δλ/2)
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-            const dist = R * c
-
-            if (dist > 10 || timeDiff > 10000) {
-              shouldUpdate = true
-            }
-          }
-
-          if (shouldUpdate) {
-            lastLocRef.current = { lat: newLat, lng: newLng, time: now }
-            updateLocation({ lat: newLat, lng: newLng })
-            appendRoutePoint({ lat: newLat, lng: newLng })
-
-            // Aktif booking varsa, şoför konumunu müşteriye bildir
-            if (activeBooking?.id) {
-              sendDriverLocationToBooking(activeBooking.id, { lat: newLat, lng: newLng })
-            }
-          }
-        },
-        async (err) => {
-          console.warn('GPS hatası:', err.message)
-
-          if (!ipLocationAttempted) {
-            ipLocationAttempted = true
-            toast.info('GPS kullanılamıyor, IP bazlı konum aranıyor...')
-
-            const ipLoc = await fetchIpLocation()
-            if (ipLoc) {
-              setLocationSource('ip')
-              updateLocation(ipLoc)
-              toast.success('Yaklaşık konum bulundu!')
-            } else {
-              setLocationSource('none')
-              toast.warning('Konum bulunamadı. Haritada tıklayarak seçin.')
-            }
-          }
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      ) as unknown as number
-    } else {
-      (async () => {
-        ipLocationAttempted = true
-        toast.info('GPS desteklenmiyor, IP bazlı konum aranıyor...')
-
-        const ipLoc = await fetchIpLocation()
-        if (ipLoc) {
-          setLocationSource('ip')
-          updateLocation(ipLoc)
-        } else {
-          setLocationSource('none')
-          toast.warning('Konum bulunamadı. Haritada tıklayarak seçin.')
+    const fetchIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
+      try {
+        const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(5000) })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.latitude && data.longitude) return { lat: data.latitude, lng: data.longitude }
         }
-      })()
+      } catch { /* ignore */ }
+      try {
+        const res = await fetch('https://ip-api.com/json/', { signal: AbortSignal.timeout(5000) })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.lat && data.lon) return { lat: data.lat, lng: data.lon }
+        }
+      } catch { /* ignore */ }
+      return null
     }
 
+    const initLocation = async () => {
+      // Önce veritabanındaki kayıtlı konumu kontrol et
+      const savedLocation = me?.location
+      if (savedLocation && savedLocation.lat !== 0 && savedLocation.lng !== 0) {
+        console.log('📍 Kayıtlı konum kullanılıyor:', savedLocation)
+        setLocationSource('manual')
+        updateLocation(savedLocation)
+      }
+
+      // GPS dene
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (p) => {
+            if (!mounted) return
+            console.log('✅ GPS konumu alındı:', p.coords.latitude, p.coords.longitude)
+            setLocationSource('gps')
+            const loc = { lat: p.coords.latitude, lng: p.coords.longitude }
+            updateLocation(loc)
+          },
+          async (err) => {
+            console.warn('GPS hatası:', err.message)
+            if (!mounted) return
+
+            // Kayıtlı konum var mı kontrol et
+            if (savedLocation && savedLocation.lat !== 0 && savedLocation.lng !== 0) {
+              setLocationSource('manual')
+              toast.info('Kayıtlı konumunuz kullanılıyor')
+              return
+            }
+
+            // IP bazlı konum dene
+            const ipLoc = await fetchIpLocation()
+            if (ipLoc && mounted) {
+              setLocationSource('ip')
+              updateLocation(ipLoc)
+              toast.info('Yaklaşık konumunuz kullanılıyor')
+            } else if (mounted) {
+              setLocationSource('none')
+              toast.error('Konum alınamadı! Tarayıcınıza konum izni verin.')
+            }
+          },
+          { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
+        )
+
+        // Sürekli konum takibi
+        watchIdLocal = navigator.geolocation.watchPosition(
+          (p) => {
+            if (!mounted) return
+            setLocationSource('gps')
+
+            const newLat = p.coords.latitude
+            const newLng = p.coords.longitude
+            const now = Date.now()
+
+            let shouldUpdate = false
+
+            if (!lastLocRef.current) {
+              shouldUpdate = true
+            } else {
+              const { lat: oldLat, lng: oldLng, time: oldTime } = lastLocRef.current
+              const timeDiff = now - oldTime
+
+              const R = 6371e3
+              const φ1 = oldLat * Math.PI/180
+              const φ2 = newLat * Math.PI/180
+              const Δφ = (newLat-oldLat) * Math.PI/180
+              const Δλ = (newLng-oldLng) * Math.PI/180
+              const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                        Math.cos(φ1) * Math.cos(φ2) *
+                        Math.sin(Δλ/2) * Math.sin(Δλ/2)
+              const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+              const dist = R * c
+
+              if (dist > 10 || timeDiff > 10000) {
+                shouldUpdate = true
+              }
+            }
+
+            if (shouldUpdate) {
+              lastLocRef.current = { lat: newLat, lng: newLng, time: now }
+              updateLocation({ lat: newLat, lng: newLng })
+              appendRoutePoint({ lat: newLat, lng: newLng })
+
+              if (activeBooking?.id) {
+                sendDriverLocationToBooking(activeBooking.id, { lat: newLat, lng: newLng })
+              }
+            }
+          },
+          (err) => {
+            console.warn('GPS watch hatası:', err.message)
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+        ) as unknown as number
+      } else {
+        // GPS yok
+        if (savedLocation && savedLocation.lat !== 0 && savedLocation.lng !== 0) {
+          setLocationSource('manual')
+        } else {
+          const ipLoc = await fetchIpLocation()
+          if (ipLoc && mounted) {
+            setLocationSource('ip')
+            updateLocation(ipLoc)
+          } else if (mounted) {
+            setLocationSource('none')
+            toast.error('Konum alınamadı!')
+          }
+        }
+      }
+    }
+
+    initLocation()
+
     return () => {
+      mounted = false
       try {
         if (watchIdLocal) navigator.geolocation.clearWatch(watchIdLocal)
       } catch { /* ignore */ }
@@ -368,10 +400,7 @@ export const DriverDashboard = () => {
     if (!activeBooking) return
     await updateBookingStatus(activeBooking.id, 'driver_en_route')
     setActiveBooking({ ...activeBooking, status: 'driver_en_route' })
-    toast.success('Yola çıktınız! Müşteriye yönelin.')
-    // Google Maps navigasyon aç
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${me?.location?.lat},${me?.location?.lng}&destination=${activeBooking.pickupLocation?.lat},${activeBooking.pickupLocation?.lng}&travelmode=driving`
-    window.open(url, '_blank')
+    toast.success('Yola çıktınız! Haritada rotayı takip edin.')
   }
 
   const handleArrived = async () => {
@@ -385,10 +414,7 @@ export const DriverDashboard = () => {
     if (!activeBooking) return
     await confirmPickup(activeBooking.id)
     setActiveBooking({ ...activeBooking, status: 'in_progress' })
-    toast.success('Yolculuk başladı!')
-    // Google Maps navigasyon aç
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${activeBooking.pickupLocation?.lat},${activeBooking.pickupLocation?.lng}&destination=${activeBooking.dropoffLocation?.lat},${activeBooking.dropoffLocation?.lng}&travelmode=driving`
-    window.open(url, '_blank')
+    toast.success('Yolculuk başladı! Haritada rotayı takip edin.')
   }
 
   const handleComplete = async () => {
@@ -514,26 +540,14 @@ export const DriverDashboard = () => {
                   )}
                   
                   {activeBooking.status === 'driver_en_route' && (
-                    <div className="space-y-2">
-                      <Button
-                        size="lg"
-                        onClick={handleArrived}
-                        className="w-full bg-blue-600 hover:bg-blue-700 py-4 text-lg"
-                      >
-                        <CheckCircle className="h-5 w-5 mr-2" />
-                        Müşteriye Ulaştım
-                      </Button>
-                      <a
-                        href={`https://www.google.com/maps/dir/?api=1&origin=${me?.location?.lat},${me?.location?.lng}&destination=${activeBooking.pickupLocation?.lat},${activeBooking.pickupLocation?.lng}&travelmode=driving`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <Button size="sm" variant="outline" className="w-full text-white border-white">
-                          <Navigation className="h-4 w-4 mr-2" />
-                          Navigasyon Aç
-                        </Button>
-                      </a>
-                    </div>
+                    <Button
+                      size="lg"
+                      onClick={handleArrived}
+                      className="w-full bg-blue-600 hover:bg-blue-700 py-4 text-lg"
+                    >
+                      <CheckCircle className="h-5 w-5 mr-2" />
+                      Müşteriye Ulaştım
+                    </Button>
                   )}
                   
                   {activeBooking.status === 'driver_arrived' && (
@@ -548,27 +562,14 @@ export const DriverDashboard = () => {
                   )}
                   
                   {activeBooking.status === 'in_progress' && (
-                    <div className="space-y-2">
-                      <Button
-                        size="lg"
-                        onClick={handleComplete}
-                        disabled={typeof metersToDropoff === 'number' && metersToDropoff > 200}
-                        className="w-full bg-green-600 hover:bg-green-700 py-4 text-lg"
-                      >
-                        <CheckCircle className="h-5 w-5 mr-2" />
-                        Yolculuk Tamamlandı
-                      </Button>
-                      <a
-                        href={`https://www.google.com/maps/dir/?api=1&origin=${me?.location?.lat},${me?.location?.lng}&destination=${activeBooking.dropoffLocation?.lat},${activeBooking.dropoffLocation?.lng}&travelmode=driving`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <Button size="sm" variant="outline" className="w-full text-white border-white">
-                          <Navigation className="h-4 w-4 mr-2" />
-                          Navigasyon Aç
-                        </Button>
-                      </a>
-                    </div>
+                    <Button
+                      size="lg"
+                      onClick={handleComplete}
+                      className="w-full bg-green-600 hover:bg-green-700 py-4 text-lg"
+                    >
+                      <CheckCircle className="h-5 w-5 mr-2" />
+                      Yolculuk Tamamlandı
+                    </Button>
                   )}
                 </div>
               </div>
@@ -699,33 +700,20 @@ export const DriverDashboard = () => {
         {/* Sağ Panel - Harita */}
         <div className="flex-1 relative">
           <OpenStreetMap
-            center={hasValidLocation ? me.location : DEFAULT_CENTER}
-            customerLocation={customerLiveLocation || (activeBooking?.pickupLocation)}
-            destination={activeBooking ? (activeBooking.status === 'in_progress' ? activeBooking.dropoffLocation : activeBooking.pickupLocation) : (selectedRequest ? selectedRequest.pickup : undefined)}
-            drivers={hasValidLocation ? [{ id: me.id, name: me.name, location: me.location, rating: 0, available: me.available }] : []}
-            highlightDriverId={me?.id}
+            center={me?.location || { lat: 36.88, lng: 30.7 }}
             driverLocation={me?.location}
-            onMapClick={(loc) => {
-              setLocationSource('manual')
-              updateLocation(loc)
-              toast.success('Konum güncellendi!')
-            }}
-            path={activeBooking ? (useBookingStore.getState().routePoints || []) : []}
             pickupLocation={activeBooking?.pickupLocation}
             dropoffLocation={activeBooking?.dropoffLocation}
-            showRoute={getRouteMode()}
+            showRoute={activeBooking ? (activeBooking.status === 'in_progress' ? 'to_dropoff' : 'to_pickup') : false}
+            className="h-full w-full"
           />
-
-          {/* Harita Uyarı */}
-          <div className="absolute bottom-4 left-4 right-4 lg:left-4 lg:right-auto lg:w-80 bg-gray-900/90 text-white text-sm px-4 py-3 rounded-lg flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-green-400" />
-            <span>
-              {activeBooking?.status === 'driver_en_route' && 'Müşteriye rota çizildi'}
-              {activeBooking?.status === 'in_progress' && 'Hedefe rota çizildi'}
-              {activeBooking?.status === 'driver_arrived' && 'Müşteriyi bekliyorsunuz'}
-              {!activeBooking && 'Konumunuz müşterilere görünür durumda'}
-            </span>
-          </div>
+          
+          {/* Konum bilgisi */}
+          {me?.location && (
+            <div className="absolute bottom-4 left-4 bg-gray-900/90 text-white px-4 py-2 rounded-lg text-sm z-10">
+              📍 {me.location.lat.toFixed(4)}, {me.location.lng.toFixed(4)}
+            </div>
+          )}
         </div>
       </div>
     </DriverLayout>
