@@ -42,3 +42,4 @@ coverage/
 *.tsbuildinfo
 .vercel
 SECRETS_AND_SETUP.md
+.context/

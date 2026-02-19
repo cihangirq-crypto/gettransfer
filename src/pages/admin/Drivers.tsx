@@ -723,13 +723,16 @@ export const AdminDrivers: React.FC = () => {
                         </div>
                       )}
 
-                      {selectedDriver.location && selectedDriver.location.lat !== 0 && (
+                      {selectedDriver.location ? (
                         <div>
                           <h4 className="text-sm font-medium text-gray-400 mb-2 flex items-center gap-2">
                             <Navigation className="h-4 w-4" />
                             Anlık Konum
+                            <span className="text-xs text-gray-500">
+                              ({selectedDriver.location.lat.toFixed(4)}, {selectedDriver.location.lng.toFixed(4)})
+                            </span>
                           </h4>
-                          <div className="h-48 rounded-xl overflow-hidden border border-gray-700">
+                          <div className="h-48 rounded-xl overflow-hidden border border-gray-700 relative">
                             <OpenStreetMap
                               center={selectedDriver.location}
                               customerLocation={activeBooking?.pickupLocation || selectedDriver.location}
@@ -744,6 +747,11 @@ export const AdminDrivers: React.FC = () => {
                               highlightDriverId={selectedDriver.id}
                             />
                           </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 bg-gray-700/50 rounded-xl">
+                          <Navigation className="h-8 w-8 text-gray-600 mx-auto mb-2" />
+                          <p className="text-gray-400 text-sm">Konum bilgisi yok</p>
                         </div>
                       )}
                     </div>
@@ -1233,11 +1241,16 @@ export const AdminDrivers: React.FC = () => {
                   </div>
                 )}
 
-                {selectedDriver.location && selectedDriver.location.lat !== 0 && (
+                {selectedDriver.location ? (
                   <div className="bg-gray-800 border border-gray-700 rounded-2xl overflow-hidden">
-                    <div className="p-3 border-b border-gray-700 flex items-center gap-2">
-                      <Navigation className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm font-medium text-gray-300">Anlık Konum</span>
+                    <div className="p-3 border-b border-gray-700 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Navigation className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm font-medium text-gray-300">Anlık Konum</span>
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        ({selectedDriver.location.lat.toFixed(4)}, {selectedDriver.location.lng.toFixed(4)})
+                      </span>
                     </div>
                     <div className="h-56">
                       <OpenStreetMap
@@ -1254,6 +1267,11 @@ export const AdminDrivers: React.FC = () => {
                         highlightDriverId={selectedDriver.id}
                       />
                     </div>
+                  </div>
+                ) : (
+                  <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6 text-center">
+                    <Navigation className="h-10 w-10 text-gray-600 mx-auto mb-2" />
+                    <p className="text-gray-400">Konum bilgisi yok</p>
                   </div>
                 )}
               </div>
