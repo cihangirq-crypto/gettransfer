@@ -41,3 +41,4 @@ coverage/
 # TypeScript cache
 *.tsbuildinfo
 .vercel
+SECRETS_AND_SETUP.md
