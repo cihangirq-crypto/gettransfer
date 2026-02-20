@@ -163,6 +163,16 @@ const TEST_DRIVER_DATA: Record<string, Partial<DriverSession>> = {
   }
 }
 
+// Konum geçerli mi kontrol et
+const isValidLocation = (lat: number | null | undefined, lng: number | null | undefined): boolean => {
+  if (typeof lat !== 'number' || typeof lng !== 'number') return false
+  if (!isFinite(lat) || !isFinite(lng)) return false
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return false
+  // (0, 0) koordinatları geçersiz - Afrika açıkları
+  if (lat === 0 && lng === 0) return false
+  return true
+}
+
 // Test sürücülerinin eksik verilerini tamamla (isim, tel vs - KONUM HARİÇ)
 function enrichTestDriver(driver: DriverSession): DriverSession {
   const testData = TEST_DRIVER_DATA[driver.id]
@@ -177,8 +187,10 @@ function enrichTestDriver(driver: DriverSession): DriverSession {
     vehicleModel: driver.vehicleModel || testData.vehicleModel,
     licensePlate: driver.licensePlate || testData.licensePlate,
     docs: Array.isArray(driver.docs) && driver.docs.length > 0 ? driver.docs : testData.docs,
-    // KONUM DEĞİŞTİRİLMIYOR - gerçek GPS konumu korunuyor
-    location: driver.location,
+    // KONUM: Önce sürücünün kendi konumu, geçersizse testData'dan al
+    location: isValidLocation(driver.location?.lat, driver.location?.lng) 
+      ? driver.location 
+      : (isValidLocation(testData?.location?.lat, testData?.location?.lng) ? testData.location : { lat: 0, lng: 0 }),
   }
 }
 
@@ -226,6 +238,9 @@ export async function getDriver(id: string): Promise<DriverSession | null> {
   const row = Array.isArray(rows) ? rows[0] : null
   
   if (row) {
+    const lat = typeof row.location_lat === 'number' ? row.location_lat : 0
+    const lng = typeof row.location_lng === 'number' ? row.location_lng : 0
+    
     const d: DriverSession = {
       id: row.id,
       name: row.name || 'Sürücü',
@@ -238,7 +253,7 @@ export async function getDriver(id: string): Promise<DriverSession | null> {
       vehicleModel: row.vehicle_model || undefined,
       licensePlate: row.license_plate || undefined,
       docs: row.docs || undefined,
-      location: { lat: row.location_lat || 0, lng: row.location_lng || 0 },
+      location: { lat, lng },
       available: !!row.available,
       approved: !!row.approved,
       rejectedReason: row.rejected_reason || undefined,
@@ -272,6 +287,9 @@ export async function getDriverByEmail(email: string): Promise<DriverSession | n
   const row = Array.isArray(rows) ? rows[0] : null
   
   if (row) {
+    const lat = typeof row.location_lat === 'number' ? row.location_lat : 0
+    const lng = typeof row.location_lng === 'number' ? row.location_lng : 0
+    
     const d: DriverSession = {
       id: row.id,
       name: row.name || 'Sürücü',
@@ -284,7 +302,7 @@ export async function getDriverByEmail(email: string): Promise<DriverSession | n
       vehicleModel: row.vehicle_model || undefined,
       licensePlate: row.license_plate || undefined,
       docs: row.docs || undefined,
-      location: { lat: row.location_lat || 0, lng: row.location_lng || 0 },
+      location: { lat, lng },
       available: !!row.available,
       approved: !!row.approved,
       rejectedReason: row.rejected_reason || undefined,
@@ -351,6 +369,9 @@ export async function listDriversByStatus(status: 'approved' | 'pending' | 'reje
   }
   
   return rows.map((row: any) => {
+    const lat = typeof row.location_lat === 'number' ? row.location_lat : 0
+    const lng = typeof row.location_lng === 'number' ? row.location_lng : 0
+    
     const driver: DriverSession = {
       id: row.id,
       name: row.name || 'Sürücü',
@@ -363,7 +384,7 @@ export async function listDriversByStatus(status: 'approved' | 'pending' | 'reje
       vehicleModel: row.vehicle_model || undefined,
       licensePlate: row.license_plate || undefined,
       docs: row.docs || undefined,
-      location: { lat: row.location_lat || 0, lng: row.location_lng || 0 },
+      location: { lat, lng },
       available: !!row.available,
       approved: !!row.approved,
       rejectedReason: row.rejected_reason || undefined,

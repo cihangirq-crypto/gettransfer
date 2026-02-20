@@ -59,7 +59,15 @@ const isValidLatLng = (p: any) => {
   if (p.lat < -90 || p.lat > 90 || p.lng < -180 || p.lng > 180) return false
   // (0, 0) koordinatları geçersiz - hiçbir sürücü Afrika açıklarında olamaz
   if (p.lat === 0 && p.lng === 0) return false
+  // Türkiye sınırları içinde mi kontrol et (opsiyonel - yorum satırı)
+  // if (p.lat < 35.5 || p.lat > 42.5 || p.lng < 25.5 || p.lng > 44.5) return false
   return true
+}
+
+// Konum geçerli mi kontrol et - NULL veya (0,0) için false döner
+const hasValidLocation = (p: any): boolean => {
+  if (!p) return false
+  return isValidLatLng(p)
 }
 const liveLocationTs: Map<string, number> = new Map()
 const lastPersisted: Map<string, { ts: number, loc: { lat: number, lng: number } }> = new Map()

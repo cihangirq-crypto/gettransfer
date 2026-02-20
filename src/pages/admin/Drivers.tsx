@@ -472,8 +472,14 @@ export const AdminDrivers: React.FC = () => {
                             <span>{d.phone}</span>
                           </div>
                         )}
-                        {d.location && d.location.lat !== 0 && (
-                          <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
+                        {/* Konum durumu - (0,0) geçersiz sayılır */}
+                        {(!d.location || (d.location.lat === 0 && d.location.lng === 0)) ? (
+                          <div className="flex items-center gap-1 text-xs text-red-400 mt-1">
+                            <MapPin className="h-3 w-3" />
+                            <span>Konum mevcut değil</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 text-xs text-green-400 mt-1">
                             <MapPin className="h-3 w-3" />
                             <span>{d.location.lat.toFixed(4)}, {d.location.lng.toFixed(4)}</span>
                           </div>
@@ -682,7 +688,68 @@ export const AdminDrivers: React.FC = () => {
                       )}
 
                       {/* Konum Haritası */}
-                      {selectedDriver.location && selectedDriver.location.lat !== 0 && (
+                      {(!selectedDriver.location || (selectedDriver.location.lat === 0 && selectedDriver.location.lng === 0)) ? (
+                        <div className="bg-red-900/30 border border-red-700 rounded-lg p-4">
+                          <div className="flex items-center gap-2 text-red-400 mb-3">
+                            <AlertTriangle className="h-5 w-5" />
+                            <span className="font-medium">Konum Mevcut Değil</span>
+                          </div>
+                          <p className="text-sm text-gray-400 mb-3">
+                            Şoför henüz GPS konumu göndermemiş veya konum izni vermemiş.
+                          </p>
+                          {/* Manuel Konum Güncelleme */}
+                          <div className="space-y-2">
+                            <label className="text-xs text-gray-500">Manuel Konum Ata (Test için):</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="number"
+                                step="0.0001"
+                                placeholder="Enlem (lat)"
+                                className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+                                id={`lat-${selectedDriver.id}`}
+                                defaultValue="41.0082"
+                              />
+                              <input
+                                type="number"
+                                step="0.0001"
+                                placeholder="Boylam (lng)"
+                                className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+                                id={`lng-${selectedDriver.id}`}
+                                defaultValue="28.9784"
+                              />
+                            </div>
+                            <button
+                              onClick={async () => {
+                                const latEl = document.getElementById(`lat-${selectedDriver.id}`) as HTMLInputElement
+                                const lngEl = document.getElementById(`lng-${selectedDriver.id}`) as HTMLInputElement
+                                const lat = parseFloat(latEl?.value || '0')
+                                const lng = parseFloat(lngEl?.value || '0')
+                                if (lat && lng && lat !== 0 && lng !== 0) {
+                                  try {
+                                    const res = await fetch('/api/drivers/location', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ id: selectedDriver.id, location: { lat, lng } })
+                                    })
+                                    if (res.ok) {
+                                      toast.success('Konum güncellendi!')
+                                      refresh()
+                                    } else {
+                                      toast.error('Konum güncellenemedi')
+                                    }
+                                  } catch {
+                                    toast.error('Hata oluştu')
+                                  }
+                                }
+                              }}
+                              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium"
+                            >
+                              <MapPin className="h-3 w-3 inline mr-1" />
+                              Konumu Güncelle
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
                         <div>
                           <h4 className="text-sm font-medium text-gray-400 mb-2 flex items-center gap-2">
                             <Navigation className="h-4 w-4" />
@@ -703,8 +770,8 @@ export const AdminDrivers: React.FC = () => {
                               highlightDriverId={selectedDriver.id}
                             />
                           </div>
-                          <p className="text-xs text-gray-500 mt-1 text-center">
-                            {selectedDriver.location.lat.toFixed(6)}, {selectedDriver.location.lng.toFixed(6)}
+                          <p className="text-xs text-green-400 mt-1 text-center">
+                            📍 {selectedDriver.location.lat.toFixed(6)}, {selectedDriver.location.lng.toFixed(6)}
                           </p>
                         </div>
                       )}
