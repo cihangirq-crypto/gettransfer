@@ -210,24 +210,32 @@ router.post('/auth', async (req: Request, res: Response) => {
         ]
       }
       
-      const d: DriverSession = {
-        id,
-        name: sampleData.name,
-        email: emailNorm,
-        phone: sampleData.phone,
-        address: sampleData.address,
-        vehicleType: sampleData.vehicleType,
-        vehicleModel: sampleData.vehicleModel,
-        licensePlate: sampleData.licensePlate,
-        docs: sampleData.docs,
-        location: { lat: isFatih ? 40.9819 : 41.0421, lng: isFatih ? 29.0267 : 29.0093 }, // Kadıköy / Beşiktaş
-        available: false,
-        approved: true,
-        password: '123456',
+      // Önce veritabanında var mı kontrol et
+      const existingDriver = await getDriver(id)
+      if (existingDriver) {
+        drivers.set(id, existingDriver)
+        found = existingDriver
+      } else {
+        // Veritabanında yoksa yeni oluştur - location 0,0 (GPS'ten güncellenecek)
+        const d: DriverSession = {
+          id,
+          name: sampleData.name,
+          email: emailNorm,
+          phone: sampleData.phone,
+          address: sampleData.address,
+          vehicleType: sampleData.vehicleType,
+          vehicleModel: sampleData.vehicleModel,
+          licensePlate: sampleData.licensePlate,
+          docs: sampleData.docs,
+          location: { lat: 0, lng: 0 }, // Gerçek konum GPS'ten gelecek
+          available: false,
+          approved: true,
+          password: '123456',
+        }
+        drivers.set(id, d)
+        await saveDriver(d)
+        found = d
       }
-      drivers.set(id, d)
-      saveDriver(d).catch(()=>{})
-      found = d
     } else {
       res.status(401).json({ success: false, error: 'invalid_credentials' }); return
     }
