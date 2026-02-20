@@ -336,4 +336,133 @@ router.get('/bootstrap/status', async (req: Request, res: Response) => {
   res.json({ success: true, data: r })
 })
 
+// DELETE /api/admin/clear-rejected - Reddedilen tüm sürücüleri sil
+router.delete('/clear-rejected', async (req: Request, res: Response) => {
+  try {
+    if (!supabase) {
+      res.status(500).json({ success: false, error: 'database_not_connected' })
+      return
+    }
+
+    // Reddedilen sürücüleri sil (rejected_reason NOT NULL olanlar)
+    const { error, count } = await supabase
+      .from('drivers')
+      .delete({ count: 'exact' })
+      .not('rejected_reason', 'is', null)
+
+    if (error) {
+      logger.error('clear_rejected_error', { error })
+      res.status(500).json({ success: false, error: 'delete_failed' })
+      return
+    }
+
+    res.json({ 
+      success: true, 
+      message: `${count || 0} reddedilen sürücü silindi`,
+      deletedCount: count 
+    })
+  } catch (error) {
+    logger.error('clear_rejected_error', { error })
+    res.status(500).json({ success: false, error: 'clear_failed' })
+  }
+})
+
+// DELETE /api/admin/clear-all-drivers - Tüm sürücüleri sil (admin hariç)
+router.delete('/clear-all-drivers', async (req: Request, res: Response) => {
+  try {
+    if (!supabase) {
+      res.status(500).json({ success: false, error: 'database_not_connected' })
+      return
+    }
+
+    // Tüm sürücüleri sil
+    const { error, count } = await supabase
+      .from('drivers')
+      .delete({ count: 'exact' })
+      .neq('email', 'admin@gettransfer.com') // Admin'i koru (varsa)
+
+    if (error) {
+      logger.error('clear_all_drivers_error', { error })
+      res.status(500).json({ success: false, error: 'delete_failed' })
+      return
+    }
+
+    res.json({ 
+      success: true, 
+      message: `${count || 0} sürücü silindi`,
+      deletedCount: count 
+    })
+  } catch (error) {
+    logger.error('clear_all_drivers_error', { error })
+    res.status(500).json({ success: false, error: 'clear_failed' })
+  }
+})
+
+// DELETE /api/admin/clear-all-bookings - Tüm rezervasyonları sil
+router.delete('/clear-all-bookings', async (req: Request, res: Response) => {
+  try {
+    if (!supabase) {
+      res.status(500).json({ success: false, error: 'database_not_connected' })
+      return
+    }
+
+    // Tüm rezervasyonları sil
+    const { error, count } = await supabase
+      .from('bookings')
+      .delete({ count: 'exact' })
+
+    if (error) {
+      logger.error('clear_all_bookings_error', { error })
+      res.status(500).json({ success: false, error: 'delete_failed' })
+      return
+    }
+
+    res.json({ 
+      success: true, 
+      message: `${count || 0} rezervasyon silindi`,
+      deletedCount: count 
+    })
+  } catch (error) {
+    logger.error('clear_all_bookings_error', { error })
+    res.status(500).json({ success: false, error: 'clear_failed' })
+  }
+})
+
+// DELETE /api/admin/reset-all - Her şeyi temizle (yeni başlangıç)
+router.delete('/reset-all', async (req: Request, res: Response) => {
+  try {
+    if (!supabase) {
+      res.status(500).json({ success: false, error: 'database_not_connected' })
+      return
+    }
+
+    let deletedDrivers = 0
+    let deletedBookings = 0
+
+    // Tüm rezervasyonları sil
+    const { error: bookingError, count: bookingCount } = await supabase
+      .from('bookings')
+      .delete({ count: 'exact' })
+    
+    if (!bookingError) deletedBookings = bookingCount || 0
+
+    // Tüm sürücüleri sil
+    const { error: driverError, count: driverCount } = await supabase
+      .from('drivers')
+      .delete({ count: 'exact' })
+    
+    if (!driverError) deletedDrivers = driverCount || 0
+
+    res.json({ 
+      success: true, 
+      message: `Sistem sıfırlandı: ${deletedDrivers} sürücü, ${deletedBookings} rezervasyon silindi`,
+      deletedDrivers,
+      deletedBookings
+    })
+  } catch (error) {
+    logger.error('reset_all_error', { error })
+    res.status(500).json({ success: false, error: 'reset_failed' })
+  }
+})
+
 export default router

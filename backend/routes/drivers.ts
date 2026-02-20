@@ -115,15 +115,7 @@ router.post('/register', (req: Request, res: Response) => {
     docs: Array.isArray(docs) ? docs : [],
     location,
     available: true,
-    approved: id === 'drv_fatih' || id === 'drv_vedat',
-  }
-  if ((id === 'drv_fatih' || id === 'drv_vedat') && d.docs.length === 0) {
-    d.docs = [
-      { name: 'license' },
-      { name: 'vehicle_registration' },
-      { name: 'insurance' },
-      { name: 'profile_photo' },
-    ]
+    approved: false, // Yeni kayıtlar onay bekliyor
   }
   drivers.set(id, d)
   saveDriver(d).catch(()=>{})
@@ -192,61 +184,7 @@ router.post('/auth', async (req: Request, res: Response) => {
     try { found = await (await import('../services/storage.js')).getDriverByEmail(email) || undefined as any } catch {}
   }
   if (!found) {
-    const emailNorm = String(email).trim().toLowerCase()
-    if ((emailNorm === 'fatih@test.com' || emailNorm === 'vedat@test.com') && password === '123456') {
-      const isFatih = emailNorm === 'fatih@test.com'
-      const id = isFatih ? 'drv_fatih' : 'drv_vedat'
-      
-      // Gerçekçi örnek veriler
-      const sampleData = isFatih ? {
-        name: 'Fatih Yılmaz',
-        phone: '0532 555 12 34',
-        address: 'Kadıköy Mahallesi, Bağdat Caddesi No: 45, Kadıköy/İstanbul',
-        vehicleModel: 'Toyota Corolla 2022',
-        licensePlate: '34 ABC 123',
-        vehicleType: 'sedan' as const,
-        docs: [
-          { name: 'license', url: 'https://placehold.co/400x300/1e40af/white?text=Suru+cu+Belgesi%0AFatih+Yilmaz%0AB+Sinifi', uploadedAt: '2024-01-15T10:00:00Z', status: 'approved' as const },
-          { name: 'vehicle_registration', url: 'https://placehold.co/400x300/166534/white?text=Ruhsat%0A34+ABC+123%0AToyota+Corolla', uploadedAt: '2024-01-15T10:05:00Z', status: 'approved' as const },
-          { name: 'insurance', url: 'https://placehold.co/400x300/7c3aed/white?text=Sigorta+Poli%E7esi%0ATrafik+Sigortasi%0A2024-2025', uploadedAt: '2024-01-15T10:10:00Z', status: 'approved' as const },
-          { name: 'profile_photo', url: 'https://placehold.co/400x400/374151/white?text=Fatih%0AYilmaz%0AProfil+Foto', uploadedAt: '2024-01-15T10:15:00Z', status: 'approved' as const },
-        ]
-      } : {
-        name: 'Vedat Demir',
-        phone: '0533 666 78 90',
-        address: 'Beşiktaş Mahallesi, Barbaros Bulvarı No: 78, Beşiktaş/İstanbul',
-        vehicleModel: 'Mercedes E-Class 2023',
-        licensePlate: '34 XYZ 456',
-        vehicleType: 'luxury' as const,
-        docs: [
-          { name: 'license', url: 'https://placehold.co/400x300/1e40af/white?text=Suru+cu+Belgesi%0AVedat+Demir%0AB+Sinifi', uploadedAt: '2024-02-01T09:00:00Z', status: 'approved' as const },
-          { name: 'vehicle_registration', url: 'https://placehold.co/400x300/166534/white?text=Ruhsat%0A34+XYZ+456%0AMercedes+E200', uploadedAt: '2024-02-01T09:05:00Z', status: 'approved' as const },
-          { name: 'insurance', url: 'https://placehold.co/400x300/7c3aed/white?text=Sigorta+Poli%E7esi%0ATrafik+Sigortasi%0A2024-2025', uploadedAt: '2024-02-01T09:10:00Z', status: 'approved' as const },
-          { name: 'profile_photo', url: 'https://placehold.co/400x400/374151/white?text=Vedat%0ADemir%0AProfil+Foto', uploadedAt: '2024-02-01T09:15:00Z', status: 'approved' as const },
-        ]
-      }
-      
-      const d: DriverSession = {
-        id,
-        name: sampleData.name,
-        email: emailNorm,
-        phone: sampleData.phone,
-        address: sampleData.address,
-        vehicleType: sampleData.vehicleType,
-        vehicleModel: sampleData.vehicleModel,
-        licensePlate: sampleData.licensePlate,
-        docs: sampleData.docs,
-        location: { lat: isFatih ? 40.9819 : 41.0421, lng: isFatih ? 29.0267 : 29.0093 }, // Kadıköy / Beşiktaş
-        available: false,
-        approved: true,
-        password: '123456',
-      }
-      drivers.set(id, d)
-      saveDriver(d).catch(()=>{})
-      found = d
-    } else {
-      res.status(401).json({ success: false, error: 'invalid_credentials' }); return
-    }
+    res.status(401).json({ success: false, error: 'invalid_credentials' }); return
   }
   let ok = false
   if (found.passwordHash && found.passwordSalt) {

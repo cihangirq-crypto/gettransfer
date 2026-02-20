@@ -87,81 +87,11 @@ async function supabaseRequest(table: string, method: 'GET' | 'POST' | 'PATCH' |
   }
 }
 
-// Demo sürücü verisi - SADECE ilk kurulumda veya Supabase çalışmadığında kullanılır
-const DEMO_DRIVERS: DriverSession[] = [
-  {
-    id: 'drv_fatih',
-    name: 'Fatih Yılmaz',
-    email: 'fatih@test.com',
-    phone: '0532 555 12 34',
-    address: 'Kadıköy Mahallesi, Bağdat Caddesi No: 45, Kadıköy/İstanbul',
-    password: '123456',
-    vehicleType: 'sedan',
-    vehicleModel: 'Toyota Corolla 2022',
-    licensePlate: '34 ABC 123',
-    docs: [
-      { name: 'license', url: 'https://placehold.co/400x300/1e40af/white?text=Suru+cu+Belgesi', uploadedAt: '2024-01-15T10:00:00Z', status: 'approved' },
-      { name: 'vehicle_registration', url: 'https://placehold.co/400x300/166534/white?text=Ruhsat', uploadedAt: '2024-01-15T10:05:00Z', status: 'approved' },
-      { name: 'insurance', url: 'https://placehold.co/400x300/7c3aed/white?text=Sigorta', uploadedAt: '2024-01-15T10:10:00Z', status: 'approved' },
-      { name: 'profile_photo', url: 'https://placehold.co/400x400/374151/white?text=Fatih', uploadedAt: '2024-01-15T10:15:00Z', status: 'approved' },
-    ],
-    location: { lat: 40.9819, lng: 29.0267 }, // Kadıköy
-    available: false,
-    approved: true,
-  },
-  {
-    id: 'drv_vedat',
-    name: 'Vedat Demir',
-    email: 'vedat@test.com',
-    phone: '0533 666 78 90',
-    address: 'Beşiktaş Mahallesi, Barbaros Bulvarı No: 78, Beşiktaş/İstanbul',
-    password: '123456',
-    vehicleType: 'luxury',
-    vehicleModel: 'Mercedes E-Class 2023',
-    licensePlate: '34 XYZ 456',
-    docs: [
-      { name: 'license', url: 'https://placehold.co/400x300/1e40af/white?text=Suru+cu+Belgesi', uploadedAt: '2024-02-01T09:00:00Z', status: 'approved' },
-      { name: 'vehicle_registration', url: 'https://placehold.co/400x300/166534/white?text=Ruhsat', uploadedAt: '2024-02-01T09:05:00Z', status: 'approved' },
-      { name: 'insurance', url: 'https://placehold.co/400x300/7c3aed/white?text=Sigorta', uploadedAt: '2024-02-01T09:10:00Z', status: 'approved' },
-      { name: 'profile_photo', url: 'https://placehold.co/400x400/374151/white?text=Vedat', uploadedAt: '2024-02-01T09:15:00Z', status: 'approved' },
-    ],
-    location: { lat: 41.0421, lng: 29.0093 }, // Beşiktaş
-    available: false,
-    approved: true,
-  }
-]
+// Demo sürücü verisi - ARTIK KULLANILMIYOR (gerçek verilerle çalışıyoruz)
+const DEMO_DRIVERS: DriverSession[] = []
 
-// Test sürücüleri için örnek veri (veritabanında eksikse kullanılır)
-const TEST_DRIVER_DATA: Record<string, Partial<DriverSession>> = {
-  'drv_fatih': {
-    name: 'Fatih Yılmaz',
-    phone: '0532 555 12 34',
-    address: 'Kadıköy Mahallesi, Bağdat Caddesi No: 45, Kadıköy/İstanbul',
-    vehicleModel: 'Toyota Corolla 2022',
-    licensePlate: '34 ABC 123',
-    docs: [
-      { name: 'license', url: 'https://placehold.co/400x300/1e40af/white?text=Suru+cu+Belgesi', uploadedAt: '2024-01-15T10:00:00Z', status: 'approved' as const },
-      { name: 'vehicle_registration', url: 'https://placehold.co/400x300/166534/white?text=Ruhsat', uploadedAt: '2024-01-15T10:05:00Z', status: 'approved' as const },
-      { name: 'insurance', url: 'https://placehold.co/400x300/7c3aed/white?text=Sigorta', uploadedAt: '2024-01-15T10:10:00Z', status: 'approved' as const },
-      { name: 'profile_photo', url: 'https://placehold.co/400x400/374151/white?text=Fatih', uploadedAt: '2024-01-15T10:15:00Z', status: 'approved' as const },
-    ],
-    location: { lat: 40.9819, lng: 29.0267 },
-  },
-  'drv_vedat': {
-    name: 'Vedat Demir',
-    phone: '0533 666 78 90',
-    address: 'Beşiktaş Mahallesi, Barbaros Bulvarı No: 78, Beşiktaş/İstanbul',
-    vehicleModel: 'Mercedes E-Class 2023',
-    licensePlate: '34 XYZ 456',
-    docs: [
-      { name: 'license', url: 'https://placehold.co/400x300/1e40af/white?text=Suru+cu+Belgesi', uploadedAt: '2024-02-01T09:00:00Z', status: 'approved' as const },
-      { name: 'vehicle_registration', url: 'https://placehold.co/400x300/166534/white?text=Ruhsat', uploadedAt: '2024-02-01T09:05:00Z', status: 'approved' as const },
-      { name: 'insurance', url: 'https://placehold.co/400x300/7c3aed/white?text=Sigorta', uploadedAt: '2024-02-01T09:10:00Z', status: 'approved' as const },
-      { name: 'profile_photo', url: 'https://placehold.co/400x400/374151/white?text=Vedat', uploadedAt: '2024-02-01T09:15:00Z', status: 'approved' as const },
-    ],
-    location: { lat: 41.0421, lng: 29.0093 },
-  }
-}
+// Test sürücüleri için örnek veri - ARTIK KULLANILMIYOR
+const TEST_DRIVER_DATA: Record<string, Partial<DriverSession>> = {}
 
 // Konum geçerli mi kontrol et
 const isValidLocation = (lat: number | null | undefined, lng: number | null | undefined): boolean => {
@@ -173,25 +103,9 @@ const isValidLocation = (lat: number | null | undefined, lng: number | null | un
   return true
 }
 
-// Test sürücülerinin eksik verilerini tamamla (isim, tel vs - KONUM HARİÇ)
+// Test sürücülerinin eksik verilerini tamamla (artık kullanılmıyor - gerçek verilerle çalışıyoruz)
 function enrichTestDriver(driver: DriverSession): DriverSession {
-  const testData = TEST_DRIVER_DATA[driver.id]
-  if (!testData) return driver
-  
-  // Sürücü verilerini tamamla ama KONUMU DEĞİŞTİRME - gerçek GPS konumu kullanılacak
-  return {
-    ...driver,
-    name: driver.name && driver.name !== 'Sürücü' ? driver.name : testData.name || driver.name,
-    phone: driver.phone || testData.phone,
-    address: driver.address || testData.address,
-    vehicleModel: driver.vehicleModel || testData.vehicleModel,
-    licensePlate: driver.licensePlate || testData.licensePlate,
-    docs: Array.isArray(driver.docs) && driver.docs.length > 0 ? driver.docs : testData.docs,
-    // KONUM: Önce sürücünün kendi konumu, geçersizse testData'dan al
-    location: isValidLocation(driver.location?.lat, driver.location?.lng) 
-      ? driver.location 
-      : (isValidLocation(testData?.location?.lat, testData?.location?.lng) ? testData.location : { lat: 0, lng: 0 }),
-  }
+  return driver
 }
 
 async function sbUpsertDriver(d: DriverSession) {
@@ -230,9 +144,6 @@ export async function saveDriver(d: DriverSession) {
 export async function getDriver(id: string): Promise<DriverSession | null> {
   if (memory.has(id)) return memory.get(id) || null
   
-  // Test sürücüleri için demo veriyi kontrol et
-  const demoDriver = DEMO_DRIVERS.find(d => d.id === id)
-  
   // Supabase'den çek
   const rows = await supabaseRequest('drivers', 'GET', null, `id=eq.${id}&limit=1`)
   const row = Array.isArray(rows) ? rows[0] : null
@@ -258,18 +169,8 @@ export async function getDriver(id: string): Promise<DriverSession | null> {
       approved: !!row.approved,
       rejectedReason: row.rejected_reason || undefined,
     }
-    // Test sürücülerinin eksik verilerini tamamla
-    const enriched = enrichTestDriver(d)
-    memory.set(id, enriched)
-    return enriched
-  }
-  
-  // Veritabanında yoksa ama test sürücüsü ise, demo veriyi döndür ve kaydet
-  if (demoDriver) {
-    console.log('Test driver not in DB, inserting:', id)
-    await sbUpsertDriver(demoDriver)
-    memory.set(id, demoDriver)
-    return demoDriver
+    memory.set(id, d)
+    return d
   }
   
   return null
@@ -336,38 +237,6 @@ export async function listDriversByStatus(status: 'approved' | 'pending' | 'reje
     return []
   }
   
-  // Eğer onaylı sürücü listesi boşsa ve test sürücüleri yoksa, demo veri döndür
-  if (status === 'approved' && rows.length === 0) {
-    console.log('No approved drivers in database, initializing test drivers...')
-    // Test sürücülerini veritabanına ekle
-    for (const d of DEMO_DRIVERS) {
-      await sbUpsertDriver(d)
-    }
-    return DEMO_DRIVERS
-  }
-  
-  // Test sürücülerinin listede olup olmadığını kontrol et
-  if (status === 'approved' || status === 'all') {
-    const hasFatih = rows.some((r: any) => r.id === 'drv_fatih')
-    const hasVedat = rows.some((r: any) => r.id === 'drv_vedat')
-    
-    // Test sürücüleri eksikse ekle
-    if (!hasFatih) {
-      const fatih = DEMO_DRIVERS.find(d => d.id === 'drv_fatih')
-      if (fatih) {
-        await sbUpsertDriver(fatih)
-        rows.push(fatih as any)
-      }
-    }
-    if (!hasVedat) {
-      const vedat = DEMO_DRIVERS.find(d => d.id === 'drv_vedat')
-      if (vedat) {
-        await sbUpsertDriver(vedat)
-        rows.push(vedat as any)
-      }
-    }
-  }
-  
   return rows.map((row: any) => {
     const lat = typeof row.location_lat === 'number' ? row.location_lat : 0
     const lng = typeof row.location_lng === 'number' ? row.location_lng : 0
@@ -389,7 +258,6 @@ export async function listDriversByStatus(status: 'approved' | 'pending' | 'reje
       approved: !!row.approved,
       rejectedReason: row.rejected_reason || undefined,
     }
-    // Test sürücülerinin eksik verilerini tamamla
     return enrichTestDriver(driver)
   })
 }

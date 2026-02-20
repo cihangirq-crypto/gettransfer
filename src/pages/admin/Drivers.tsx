@@ -401,6 +401,33 @@ export const AdminDrivers: React.FC = () => {
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             Yenile
           </button>
+          
+          {/* Reddedilenleri Temizle Butonu */}
+          {view === 'rejected' && rejected.length > 0 && (
+            <button
+              onClick={async () => {
+                if (!confirm(`${rejected.length} reddedilen başvuruyu silmek istediğinize emin misiniz?`)) return
+                try {
+                  const res = await fetch('/api/admin/clear-rejected', { method: 'DELETE' })
+                  const j = await res.json()
+                  if (res.ok && j.success) {
+                    toast.success(j.message)
+                    setRejected([])
+                    setSelectedId(null)
+                  } else {
+                    toast.error('Silme başarısız: ' + (j?.error || 'Bilinmeyen hata'))
+                  }
+                } catch (e) {
+                  toast.error('Hata oluştu')
+                  console.error(e)
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium bg-red-900 hover:bg-red-800 text-red-300"
+            >
+              <Trash2 className="h-4 w-4" />
+              Reddedilenleri Temizle ({rejected.length})
+            </button>
+          )}
         </div>
 
         {/* Ana İçerik */}
